@@ -86,6 +86,7 @@ fn intrinsic_operation_unsafety(tcx: TyCtxt<'_>, intrinsic_id: LocalDefId) -> hi
         | sym::ceilf32
         | sym::ceilf64
         | sym::ceilf128
+        | sym::codeview_annotation
         | sym::cold_path
         | sym::const_eval_select
         | sym::contract_check_ensures
@@ -293,6 +294,17 @@ pub(crate) fn check_intrinsic_type(
         sym::amdgpu_dispatch_ptr => (0, 0, vec![], Ty::new_imm_ptr(tcx, tcx.types.unit)),
         sym::unreachable => (0, 0, vec![], tcx.types.never),
         sym::breakpoint => (0, 0, vec![], tcx.types.unit),
+        sym::codeview_annotation => {
+            // codeview_annotation(s: &'static str) -> ()
+            // Takes a string literal with null-separated substrings that become an MDTuple of MDStrings
+            // So the sig is: 0 type params, 0 const params, 1 input (&'static str) and returns unit
+            (
+                0,
+                0,
+                vec![Ty::new_imm_ref(tcx, tcx.lifetimes.re_static, tcx.types.str_)],
+                tcx.types.unit,
+            )
+        }
         sym::size_of | sym::align_of | sym::variant_count => (1, 0, vec![], tcx.types.usize),
         sym::size_of_val | sym::align_of_val => {
             (1, 0, vec![Ty::new_imm_ptr(tcx, param(0))], tcx.types.usize)

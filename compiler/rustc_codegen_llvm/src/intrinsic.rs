@@ -37,7 +37,7 @@ use crate::declare::declare_raw_fn;
 use crate::errors::{
     AutoDiffWithoutEnable, AutoDiffWithoutLto, OffloadWithoutEnable, OffloadWithoutFatLTO,
 };
-use crate::llvm::{self, Type, Value};
+use crate::llvm::{self, Metadata, Type, Value};
 use crate::type_of::LayoutLlvmExt;
 use crate::va_arg::emit_va_arg;
 
@@ -286,6 +286,13 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
                 return Ok(());
             }
             sym::breakpoint => self.call_intrinsic("llvm.debugtrap", &[], &[]),
+            sym::codeview_annotation => {
+                // Ideally should be codegenned here, but we get code genned
+                // operand (OperandRef) in this function instead of a MIR const
+                // that we can evaluate to get the string. Therefore as a hack
+                // we codegen directly in block.rs where we do have the const
+                bug!("codeview_annotation should be handled in block.rs");
+            }
             sym::va_arg => {
                 match result.layout.backend_repr {
                     BackendRepr::Scalar(scalar) => {
@@ -833,6 +840,33 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
 
     fn va_end(&mut self, va_list: &'ll Value) -> &'ll Value {
         self.call_intrinsic("llvm.va_end", &[self.val_ty(va_list)], &[va_list])
+    }
+
+    /// HACK: this function does not belong in this impl at all
+    /// but it will do for now as we have to put it somewhere
+    fn codeview_annotation(&mut self, strings: &[&[u8]]) {
+        if !self.cx.sess().target.is_like_msvc {
+            return;
+        }
+
+        if strings.is_empty() {
+            return;
+        }
+
+        // Create MDStrings from strings
+        let md_strings: Vec<&Metadata> =
+            strings.iter().map(|s| self.cx.create_metadata(s)).collect();
+
+        // Create MDTuple from all the MDStrings
+        let md_tuple = unsafe {
+            llvm::LLVMMDNodeInContext2(self.cx.llcx, md_strings.as_ptr(), md_strings.len())
+        };
+        let md_value = self.cx.get_metadata_value(md_tuple);
+
+        // Get the intrinsic via lookup
+        let (fn_ty, intrinsic_fn) = self.cx.get_intrinsic("llvm.codeview.annotation".into(), &[]);
+
+        self.call(fn_ty, None, None, intrinsic_fn, &[md_value], None, None);
     }
 }
 

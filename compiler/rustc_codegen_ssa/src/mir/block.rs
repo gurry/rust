@@ -12,7 +12,7 @@ use rustc_middle::ty::print::{with_no_trimmed_paths, with_no_visible_paths};
 use rustc_middle::ty::{self, Instance, Ty, TypeVisitableExt};
 use rustc_middle::{bug, span_bug};
 use rustc_session::config::OptLevel;
-use rustc_span::{Span, Spanned};
+use rustc_span::{Span, Spanned, sym};
 use rustc_target::callconv::{ArgAbi, ArgAttributes, CastTarget, FnAbi, PassMode};
 use tracing::{debug, info};
 
@@ -939,6 +939,33 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                             mergeable_succ,
                         ) {
                             return merging_succ;
+                        }
+
+                        // HACK: Ideally should be codegenned in rustc_codegen_llvm, but
+                        // we send code genned operand (OperandRef) there which we cannot
+                        // eval to a string. So as a hack we codegen right here where we
+                        // do have the const
+                        if intrinsic.name == sym::codeview_annotation {
+                            if let Some(target) = target {
+                                if let Some(arg) = args.first() {
+                                    // First arg is our &'static str
+                                    if let mir::Operand::Constant(constant) = &arg.node {
+                                        let const_val = self.eval_mir_constant(constant);
+                                        // Extract bytes from the ConstValue using a diagnostics method (which is a terrible hack)
+                                        if let Some(bytes) =
+                                            const_val.try_get_slice_bytes_for_diagnostics(bx.tcx())
+                                        {
+                                            // Split by null to get individual annotation strings
+                                            let strings: Vec<&[u8]> = bytes
+                                                .split(|&b| b == 0)
+                                                .filter(|s| !s.is_empty())
+                                                .collect();
+                                            bx.codeview_annotation(&strings);
+                                        }
+                                    }
+                                }
+                                return helper.funclet_br(self, bx, target, mergeable_succ);
+                            }
                         }
 
                         let result_layout =

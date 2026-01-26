@@ -1025,3 +1025,20 @@ pub const fn prefetch_read_instruction<T>(ptr: *const T, locality: Locality) {
         Locality::L1 => intrinsics::prefetch_read_instruction::<T, { Locality::L1.to_llvm() }>(ptr),
     }
 }
+/// Emits a CodeView annotation with one or more labels that will appear in
+/// PDB debug info on Windows. This is similar to MSVC's `__annotation()`
+/// intrinsic.
+///
+/// On non-Windows platforms, this macro is a no-op.
+#[unstable(feature = "codeview_annotation", issue = "none")]
+#[macro_export]
+macro_rules! codeview_annotation {
+    ($($msg:literal),+ $(,)?) => {{
+        // Join strings with null character separator
+        $crate::intrinsics::codeview_annotation($crate::concat!($($msg, "\0"),+))
+    }};
+}
+
+#[unstable(feature = "codeview_annotation", issue = "none")]
+#[doc(inline)]
+pub use codeview_annotation;

@@ -336,6 +336,28 @@ pub const fn prefetch_write_instruction<T, const LOCALITY: i32>(data: *const T) 
 #[rustc_nounwind]
 pub fn breakpoint();
 
+/// Emits a CodeView annotation that will appear in PDB debug info on Windows.
+///
+/// It is equivalent to MSVC's `__annotation()` intrinsic.
+///
+/// It takes a string literal containing embedded annotation strings that
+/// are NUL-char separated. These strings are lowered to MDTuple of MDStrings
+/// in the generated LLVM IR. The string argument must be a literal.
+///
+/// Using a single string argument with embedded annotation strings is a terrible
+/// hack.  What we need instead is &[&str] as the argument. However it is a bit more
+/// involved to lower to LLVM IR. So for now we go with this approach for now.
+///
+/// Use the `codeview_annotation!` macro for a more ergonomic API that takes
+/// individual annotation strings and handles the NUL-separator encoding
+/// automatically.
+///
+/// On non-Windows platforms this intrinsic is a no-op.
+#[unstable(feature = "codeview_annotation", issue = "none")]
+#[rustc_intrinsic]
+#[rustc_nounwind]
+pub fn codeview_annotation(_annotation: &'static str);
+
 /// Magic intrinsic that derives its meaning from attributes
 /// attached to the function.
 ///

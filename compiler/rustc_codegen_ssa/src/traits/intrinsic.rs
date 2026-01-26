@@ -49,4 +49,9 @@ pub trait IntrinsicCallBuilderMethods<'tcx>: BackendTypes {
     /// Trait method used to inject `va_end` on the "spoofed" `VaList` before
     /// Rust defined C-variadic functions return.
     fn va_end(&mut self, val: Self::Value) -> Self::Value;
+
+    /// Emit a CodeView annotation with the given strings.
+    /// The strings are passed as raw bytes that will become MDStrings in the LLVM IR.
+    /// On non-Windows targets or when CodeView debug info is not enabled, this is a no-op.
+    fn codeview_annotation(&mut self, strings: &[&[u8]]);
 }
