@@ -295,15 +295,23 @@ pub(crate) fn check_intrinsic_type(
         sym::unreachable => (0, 0, vec![], tcx.types.never),
         sym::breakpoint => (0, 0, vec![], tcx.types.unit),
         sym::codeview_annotation => {
-            // codeview_annotation(s: &'static str) -> ()
-            // Takes a string literal with null-separated substrings that become an MDTuple of MDStrings
-            // So the sig is: 0 type params, 0 const params, 1 input (&'static str) and returns unit
-            (
-                0,
-                0,
-                vec![Ty::new_imm_ref(tcx, tcx.lifetimes.re_static, tcx.types.str_)],
-                tcx.types.unit,
-            )
+            // codeview_annotation::<const N: usize>(annotations: [&str; N]) -> ()
+            // 0 type params, 1 const param (N: usize), array of &str, returns unit
+            let generics = tcx.generics_of(intrinsic_id);
+            let n_const = if let &ty::GenericParamDef {
+                name,
+                index,
+                kind: ty::GenericParamDefKind::Const { .. },
+                ..
+            } = generics.param_at(0, tcx)
+            {
+                ty::Const::new_param(tcx, ty::ParamConst::new(index, name))
+            } else {
+                ty::Const::new_error_with_message(tcx, span, "expected const param")
+            };
+            let str_ref = Ty::new_imm_ref(tcx, tcx.lifetimes.re_static, tcx.types.str_);
+            let array_ty = Ty::new_array_with_const_len(tcx, str_ref, n_const);
+            (0, 1, vec![array_ty], tcx.types.unit)
         }
         sym::size_of | sym::align_of | sym::variant_count => (1, 0, vec![], tcx.types.usize),
         sym::size_of_val | sym::align_of_val => {

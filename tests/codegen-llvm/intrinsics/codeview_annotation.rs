@@ -11,14 +11,14 @@ use std::intrinsics::codeview_annotation;
 // CHECK: call void @llvm.codeview.annotation(metadata [[SINGLE:![0-9]+]])
 #[no_mangle]
 pub fn intrinsic_single_annotation() {
-    codeview_annotation("test_annotation");
+    codeview_annotation(["test_annotation"]);
 }
 
 // CHECK-LABEL: @intrinsic_multiple_annotations
 // CHECK: call void @llvm.codeview.annotation(metadata [[MULTI:![0-9]+]])
 #[no_mangle]
 pub fn intrinsic_multiple_annotations() {
-    codeview_annotation("category\0subcategory\0details");
+    codeview_annotation(["category", "subcategory", "details"]);
 }
 
 // CHECK-LABEL: @macro_single_annotation
