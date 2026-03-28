@@ -295,24 +295,12 @@ pub(crate) fn check_intrinsic_type(
         sym::unreachable => (0, 0, vec![], tcx.types.never),
         sym::breakpoint => (0, 0, vec![], tcx.types.unit),
         sym::codeview_annotation => {
-            // codeview_annotation::<const N: usize>(annotations: [&str; N]) -> ()
-            // 0 type params, 1 const param (N: usize), array of &str, returns unit
-            let generics = tcx.generics_of(intrinsic_id);
-            let n_const = if let &ty::GenericParamDef {
-                name,
-                index,
-                kind: ty::GenericParamDefKind::Const { .. },
-                ..
-            } = generics.param_at(0, tcx)
-            {
-                ty::Const::new_param(tcx, ty::ParamConst::new(index, name))
-            } else {
-                ty::Const::new_error_with_message(tcx, span, "expected const param")
-            };
+            // codeview_annotation(annotations: &'static [&'static str]) -> ()
+            // 0 type params, 0 const params, 1 input (&'static [&'static str]), returns unit
             let str_ref = Ty::new_imm_ref(tcx, tcx.lifetimes.re_static, tcx.types.str_);
-            let array_ty = Ty::new_array_with_const_len(tcx, str_ref, n_const);
-            let ref_to_array = Ty::new_imm_ref(tcx, tcx.lifetimes.re_static, array_ty);
-            (0, 1, vec![ref_to_array], tcx.types.unit)
+            let slice_ty = Ty::new_slice(tcx, str_ref);
+            let ref_to_slice = Ty::new_imm_ref(tcx, tcx.lifetimes.re_static, slice_ty);
+            (0, 0, vec![ref_to_slice], tcx.types.unit)
         }
         sym::size_of | sym::align_of | sym::variant_count => (1, 0, vec![], tcx.types.usize),
         sym::size_of_val | sym::align_of_val => {

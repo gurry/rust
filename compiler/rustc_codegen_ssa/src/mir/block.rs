@@ -941,14 +941,14 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                             return merging_succ;
                         }
 
-                        // Emit a CodeView annotation from a &[&str; N] array reference constant.
+                        // Emit a CodeView annotation from a &[&str] slice constant.
                         // We extract individual string values from the MIR constant
                         // and pass them to the backend for LLVM metadata generation.
                         if intrinsic.name == sym::codeview_annotation {
                             if let Some(target) = target {
                                 if let Some(arg) = args.first() {
                                     let strings =
-                                        self.extract_str_array_from_operand(bx.tcx(), &arg.node);
+                                        self.extract_str_slice_from_operand(bx.tcx(), &arg.node);
                                     if !strings.is_empty() {
                                         bx.codeview_annotation(&strings);
                                     }
@@ -1660,14 +1660,84 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         }
     }
 
-    /// Extracts string values from a `&[&str; N]` MIR operand.
+    /// Extracts string values from a `&[&str]` MIR operand.
     ///
-    /// Tries two strategies:
-    /// 1. If the operand is a constant, evaluates it and destructures the array
-    ///    using the const evaluator.
-    /// 2. If the operand is a Move/Copy of a local, scans the MIR for the
-    ///    constant assignment that defines it.
-    fn extract_str_array_from_operand<'b>(
+    /// The operand is typically a Move/Copy of a local that was assigned
+    /// via an unsizing coercion (`Cast(Unsize)`) from `&[&str; N]`.
+    /// We trace through the MIR to find the source constant.
+    fn extract_str_slice_from_operand<'b>(
+        &self,
+        tcx: TyCtxt<'tcx>,
+        operand: &mir::Operand<'tcx>,
+    ) -> Vec<&'b [u8]>
+    where
+        'tcx: 'b,
+    {
+        match operand {
+            mir::Operand::Constant(constant) => {
+                // If somehow the slice ref is directly a constant
+                let const_val = self.eval_mir_constant(constant);
+                let ref_ty = self.monomorphize(constant.ty());
+                self.extract_str_slice_from_wide_ptr(tcx, const_val, ref_ty)
+            }
+            mir::Operand::Copy(place) | mir::Operand::Move(place) => {
+                // Trace through MIR to find the source constant
+                self.extract_str_slice_from_local(tcx, place.local)
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Traces a local back through MIR assignments to find the source
+    /// constant for a `&[&str]` slice reference.
+    ///
+    /// Handles two patterns:
+    /// 1. `_local = move _src as &[&str] (PointerCoercion(Unsize))` — unsizing cast
+    /// 2. `_local = const ...` — direct constant assignment
+    fn extract_str_slice_from_local<'b>(
+        &self,
+        tcx: TyCtxt<'tcx>,
+        local: mir::Local,
+    ) -> Vec<&'b [u8]>
+    where
+        'tcx: 'b,
+    {
+        for bb_data in self.mir.basic_blocks.iter() {
+            for stmt in &bb_data.statements {
+                if let mir::StatementKind::Assign(box (place, rvalue)) = &stmt.kind {
+                    if place.local != local || !place.projection.is_empty() {
+                        continue;
+                    }
+                    match rvalue {
+                        // Unsizing cast: &[&str; N] -> &[&str]
+                        mir::Rvalue::Cast(
+                            mir::CastKind::PointerCoercion(
+                                ty::adjustment::PointerCoercion::Unsize,
+                                _,
+                            ),
+                            source_operand,
+                            _cast_ty,
+                        ) => {
+                            // The source is &[&str; N] — extract strings from it
+                            return self.extract_str_array_from_source(tcx, source_operand);
+                        }
+                        // Direct constant assignment
+                        mir::Rvalue::Use(mir::Operand::Constant(c)) => {
+                            let val = self.eval_mir_constant(c);
+                            let ty = self.monomorphize(c.ty());
+                            return self.extract_str_slice_from_wide_ptr(tcx, val, ty);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        Vec::new()
+    }
+
+    /// Extracts strings from the source operand of an unsizing cast.
+    /// The source is `&[&str; N]` (a thin pointer to a fixed-size array).
+    fn extract_str_array_from_source<'b>(
         &self,
         tcx: TyCtxt<'tcx>,
         operand: &mir::Operand<'tcx>,
@@ -1682,10 +1752,36 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                 self.extract_str_array_from_ref_const(tcx, const_val, ref_ty)
             }
             mir::Operand::Copy(place) | mir::Operand::Move(place) => {
-                self.extract_str_array_from_local(tcx, place.local)
+                // The source might itself be assigned from a promoted constant
+                self.extract_str_array_source_from_local(tcx, place.local)
             }
             _ => Vec::new(),
         }
+    }
+
+    /// Traces a local that holds `&[&str; N]` back to its constant definition.
+    fn extract_str_array_source_from_local<'b>(
+        &self,
+        tcx: TyCtxt<'tcx>,
+        local: mir::Local,
+    ) -> Vec<&'b [u8]>
+    where
+        'tcx: 'b,
+    {
+        for bb_data in self.mir.basic_blocks.iter() {
+            for stmt in &bb_data.statements {
+                if let mir::StatementKind::Assign(box (place, rvalue)) = &stmt.kind {
+                    if place.local == local && place.projection.is_empty() {
+                        if let mir::Rvalue::Use(mir::Operand::Constant(c)) = rvalue {
+                            let val = self.eval_mir_constant(c);
+                            let ty = self.monomorphize(c.ty());
+                            return self.extract_str_array_from_ref_const(tcx, val, ty);
+                        }
+                    }
+                }
+            }
+        }
+        Vec::new()
     }
 
     /// Extracts strings from a `ConstValue` representing `&[&str; N]`.
@@ -1727,6 +1823,50 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         self.extract_str_array_from_const(tcx, array_const, array_ty)
     }
 
+    /// Extracts strings from a `ConstValue` representing `&[&str]` (wide pointer).
+    fn extract_str_slice_from_wide_ptr<'b>(
+        &self,
+        tcx: TyCtxt<'tcx>,
+        const_val: mir::ConstValue,
+        ref_ty: Ty<'tcx>,
+    ) -> Vec<&'b [u8]>
+    where
+        'tcx: 'b,
+    {
+        // Verify this is &[&str]
+        let inner_ty = match ref_ty.kind() {
+            ty::Ref(_, inner_ty, _) => *inner_ty,
+            _ => return Vec::new(),
+        };
+        if !matches!(inner_ty.kind(), ty::Slice(_)) {
+            return Vec::new();
+        }
+
+        // Wide pointer: ConstValue::Slice { alloc_id, meta } or ConstValue::Indirect
+        // The alloc contains N × (ptr, len) pairs for each &str element.
+        // We can construct an array type with the known length and destructure it.
+        let len = match const_val {
+            mir::ConstValue::Slice { meta, .. } => meta,
+            _ => return Vec::new(),
+        };
+
+        // Build [&str; len] type and Indirect const for the slice data
+        let elem_ty = match inner_ty.kind() {
+            ty::Slice(elem) => *elem,
+            _ => return Vec::new(),
+        };
+        let array_ty = Ty::new_array(tcx, elem_ty, len);
+
+        let array_const = match const_val {
+            mir::ConstValue::Slice { alloc_id, .. } => {
+                mir::ConstValue::Indirect { alloc_id, offset: rustc_abi::Size::ZERO }
+            }
+            _ => return Vec::new(),
+        };
+
+        self.extract_str_array_from_const(tcx, array_const, array_ty)
+    }
+
     /// Extracts strings from a `ConstValue` representing `[&str; N]`.
     fn extract_str_array_from_const<'b>(
         &self,
@@ -1748,32 +1888,6 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
             .iter()
             .filter_map(|(field_val, _field_ty)| field_val.try_get_slice_bytes_for_diagnostics(tcx))
             .collect()
-    }
-
-    /// Fallback: extracts strings when the operand is a Move/Copy of a local.
-    /// Scans the MIR for the constant assignment that defines the local.
-    fn extract_str_array_from_local<'b>(
-        &self,
-        tcx: TyCtxt<'tcx>,
-        local: mir::Local,
-    ) -> Vec<&'b [u8]>
-    where
-        'tcx: 'b,
-    {
-        for bb_data in self.mir.basic_blocks.iter() {
-            for stmt in &bb_data.statements {
-                if let mir::StatementKind::Assign(box (place, rvalue)) = &stmt.kind {
-                    if place.local == local && place.projection.is_empty() {
-                        if let mir::Rvalue::Use(mir::Operand::Constant(c)) = rvalue {
-                            let val = self.eval_mir_constant(c);
-                            let ty = self.monomorphize(c.ty());
-                            return self.extract_str_array_from_ref_const(tcx, val, ty);
-                        }
-                    }
-                }
-            }
-        }
-        Vec::new()
     }
 
     fn codegen_argument(

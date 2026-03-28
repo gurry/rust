@@ -340,7 +340,7 @@ pub fn breakpoint();
 ///
 /// It is equivalent to MSVC's `__annotation()` intrinsic.
 ///
-/// Takes an array of string literal annotations that are lowered to an
+/// Takes a slice of string literal annotations that are lowered to an
 /// MDTuple of MDStrings in the generated LLVM IR. All strings must be
 /// compile-time constants.
 ///
@@ -348,7 +348,7 @@ pub fn breakpoint();
 #[unstable(feature = "codeview_annotation", issue = "none")]
 #[rustc_intrinsic]
 #[rustc_nounwind]
-pub fn codeview_annotation<const N: usize>(_annotations: &'static [&'static str; N]);
+pub fn codeview_annotation(_annotations: &'static [&'static str]);
 
 /// Magic intrinsic that derives its meaning from attributes
 /// attached to the function.
