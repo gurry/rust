@@ -941,7 +941,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                             return merging_succ;
                         }
 
-                        // Emit a CodeView annotation from a [&str; N] array constant.
+                        // Emit a CodeView annotation from a &[&str; N] array reference constant.
                         // We extract individual string values from the MIR constant
                         // and pass them to the backend for LLVM metadata generation.
                         if intrinsic.name == sym::codeview_annotation {
@@ -1660,13 +1660,13 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         }
     }
 
-    /// Extracts string values from a `[&str; N]` MIR operand.
+    /// Extracts string values from a `&[&str; N]` MIR operand.
     ///
     /// Tries two strategies:
     /// 1. If the operand is a constant, evaluates it and destructures the array
     ///    using the const evaluator.
     /// 2. If the operand is a Move/Copy of a local, scans the MIR for the
-    ///    Aggregate rvalue that constructed the array and extracts each element.
+    ///    constant assignment that defines it.
     fn extract_str_array_from_operand<'b>(
         &self,
         tcx: TyCtxt<'tcx>,
@@ -1678,15 +1678,53 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         match operand {
             mir::Operand::Constant(constant) => {
                 let const_val = self.eval_mir_constant(constant);
-                let array_ty = self.monomorphize(constant.ty());
-                self.extract_str_array_from_const(tcx, const_val, array_ty)
+                let ref_ty = self.monomorphize(constant.ty());
+                self.extract_str_array_from_ref_const(tcx, const_val, ref_ty)
             }
             mir::Operand::Copy(place) | mir::Operand::Move(place) => {
-                // Scan MIR for the Aggregate rvalue that defines this local
-                self.extract_str_array_from_aggregate(tcx, place.local)
+                self.extract_str_array_from_local(tcx, place.local)
             }
             _ => Vec::new(),
         }
+    }
+
+    /// Extracts strings from a `ConstValue` representing `&[&str; N]`.
+    ///
+    /// The reference is a thin pointer (`ConstValue::Scalar(Ptr(...))`).
+    /// We dereference it to get the inner `[&str; N]` array, then destructure
+    /// that array into individual `&str` fields.
+    fn extract_str_array_from_ref_const<'b>(
+        &self,
+        tcx: TyCtxt<'tcx>,
+        const_val: mir::ConstValue,
+        ref_ty: Ty<'tcx>,
+    ) -> Vec<&'b [u8]>
+    where
+        'tcx: 'b,
+    {
+        // Peel the reference to get the inner array type
+        let array_ty = match ref_ty.kind() {
+            ty::Ref(_, inner_ty, _) => *inner_ty,
+            _ => return Vec::new(),
+        };
+
+        // The reference is a thin pointer — extract alloc_id and offset
+        let array_const = match const_val {
+            mir::ConstValue::Scalar(scalar) => {
+                let Some(ptr) = scalar.to_pointer(&tcx).discard_err() else {
+                    return Vec::new();
+                };
+                let Some((prov, offset)) =
+                    ptr.into_pointer_or_addr().ok().map(|p| p.prov_and_relative_offset())
+                else {
+                    return Vec::new();
+                };
+                mir::ConstValue::Indirect { alloc_id: prov.alloc_id(), offset }
+            }
+            _ => return Vec::new(),
+        };
+
+        self.extract_str_array_from_const(tcx, array_const, array_ty)
     }
 
     /// Extracts strings from a `ConstValue` representing `[&str; N]`.
@@ -1712,9 +1750,9 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
             .collect()
     }
 
-    /// Fallback: extracts strings from the Aggregate rvalue that constructed
-    /// the array, when the operand was not folded into a constant.
-    fn extract_str_array_from_aggregate<'b>(
+    /// Fallback: extracts strings when the operand is a Move/Copy of a local.
+    /// Scans the MIR for the constant assignment that defines the local.
+    fn extract_str_array_from_local<'b>(
         &self,
         tcx: TyCtxt<'tcx>,
         local: mir::Local,
@@ -1726,24 +1764,10 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
             for stmt in &bb_data.statements {
                 if let mir::StatementKind::Assign(box (place, rvalue)) = &stmt.kind {
                     if place.local == local && place.projection.is_empty() {
-                        if let mir::Rvalue::Aggregate(_, operands) = rvalue {
-                            return operands
-                                .iter()
-                                .filter_map(|op| {
-                                    if let mir::Operand::Constant(c) = op {
-                                        let val = self.eval_mir_constant(c);
-                                        val.try_get_slice_bytes_for_diagnostics(tcx)
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect();
-                        }
-                        // Check if it was assigned from a constant (e.g. after const prop)
                         if let mir::Rvalue::Use(mir::Operand::Constant(c)) = rvalue {
                             let val = self.eval_mir_constant(c);
                             let ty = self.monomorphize(c.ty());
-                            return self.extract_str_array_from_const(tcx, val, ty);
+                            return self.extract_str_array_from_ref_const(tcx, val, ty);
                         }
                     }
                 }

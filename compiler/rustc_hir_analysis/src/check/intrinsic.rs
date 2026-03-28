@@ -311,7 +311,8 @@ pub(crate) fn check_intrinsic_type(
             };
             let str_ref = Ty::new_imm_ref(tcx, tcx.lifetimes.re_static, tcx.types.str_);
             let array_ty = Ty::new_array_with_const_len(tcx, str_ref, n_const);
-            (0, 1, vec![array_ty], tcx.types.unit)
+            let ref_to_array = Ty::new_imm_ref(tcx, tcx.lifetimes.re_static, array_ty);
+            (0, 1, vec![ref_to_array], tcx.types.unit)
         }
         sym::size_of | sym::align_of | sym::variant_count => (1, 0, vec![], tcx.types.usize),
         sym::size_of_val | sym::align_of_val => {

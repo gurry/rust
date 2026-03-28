@@ -1034,7 +1034,7 @@ pub const fn prefetch_read_instruction<T>(ptr: *const T, locality: Locality) {
 #[macro_export]
 macro_rules! codeview_annotation {
     ($($msg:literal),+ $(,)?) => {{
-        $crate::intrinsics::codeview_annotation([$($msg),+])
+        $crate::intrinsics::codeview_annotation(&[$($msg),+])
     }};
 }
 
