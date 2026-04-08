@@ -495,6 +495,7 @@ macro_rules! make_mir_visitor {
                                 self.visit_operand(dst, location);
                                 self.visit_operand(count, location);
                             }
+                            NonDivergingIntrinsic::DebugAnnotation(_) => {}
                         }
                     }
                     StatementKind::BackwardIncompatibleDropHint { place, .. } => {

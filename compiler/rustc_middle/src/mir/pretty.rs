@@ -870,6 +870,16 @@ impl Display for NonDivergingIntrinsic<'_> {
             Self::CopyNonOverlapping(CopyNonOverlapping { src, dst, count }) => {
                 write!(f, "copy_nonoverlapping(dst = {dst:?}, src = {src:?}, count = {count:?})")
             }
+            Self::DebugAnnotation(symbols) => {
+                write!(f, "debug_annotation(")?;
+                for (i, sym) in symbols.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{sym:?}")?;
+                }
+                write!(f, ")")
+            }
         }
     }
 }

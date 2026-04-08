@@ -504,6 +504,15 @@ pub enum NonDivergingIntrinsic<'tcx> {
     /// **Needs clarification**: Is this typed or not, ie is there a typed load and store involved?
     /// I vaguely remember Ralf saying somewhere that he thought it should not be.
     CopyNonOverlapping(CopyNonOverlapping<'tcx>),
+
+    /// Carries user-specified debug annotation strings, extracted during MIR building.
+    /// Codegen emits these as backend-specific debug metadata (e.g., `@llvm.codeview.annotation`
+    /// on MSVC targets). No runtime effect — purely debug metadata.
+    DebugAnnotation(
+        #[type_foldable(identity)]
+        #[type_visitable(ignore)]
+        Box<[rustc_span::Symbol]>,
+    ),
 }
 
 /// Describes what kind of retag is to be performed.

@@ -1,7 +1,7 @@
 //! See docs in build/expr/mod.rs
 
 use rustc_abi::FieldIdx;
-use rustc_ast::{AsmMacro, InlineAsmOptions};
+use rustc_ast::{AsmMacro, InlineAsmOptions, LitKind};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::stack::ensure_sufficient_stack;
 use rustc_hir as hir;
@@ -446,6 +446,52 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     }
                     _ => rustc_middle::bug!(),
                 }
+            }
+            ExprKind::Call { ty, fun, ref args, .. }
+                if let ty::FnDef(def_id, _) = *ty.kind()
+                    && let Some(intrinsic) = this.tcx.intrinsic(def_id)
+                    && intrinsic.name == sym::debug_annotation =>
+            {
+                let _fun = unpack!(block = this.as_local_operand(block, fun));
+
+                // Extract strings from THIR argument: &[&str; N] or &[&str]
+                let mut symbols = Vec::new();
+                let mut extraction_failed = false;
+                if let Some(&arg_id) = args.first() {
+                    Self::extract_debug_strings(
+                        &this.thir,
+                        arg_id,
+                        &mut symbols,
+                        &mut extraction_failed,
+                    );
+                }
+
+                if extraction_failed || symbols.is_empty() {
+                    this.tcx.dcx().span_err(
+                        expr_span,
+                        "debug_annotation requires constant string literal arguments",
+                    );
+                } else {
+                    let source_info = this.source_info(expr_span);
+                    this.cfg.push(
+                        block,
+                        Statement::new(
+                            source_info,
+                            StatementKind::Intrinsic(Box::new(
+                                NonDivergingIntrinsic::DebugAnnotation(symbols.into_boxed_slice()),
+                            )),
+                        ),
+                    );
+                }
+
+                // Assign unit to destination
+                let unit_rvalue = Rvalue::Use(Operand::Constant(Box::new(ConstOperand {
+                    span: expr_span,
+                    user_ty: None,
+                    const_: Const::zero_sized(this.tcx.types.unit),
+                })));
+                this.cfg.push_assign(block, this.source_info(expr_span), destination, unit_rvalue);
+                block.unit()
             }
             ExprKind::Call { ty: _, fun, ref args, from_hir_call, fn_span } => {
                 let fun = unpack!(block = this.as_local_operand(block, fun));
@@ -897,6 +943,51 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             ExprKind::Let { .. } => true,
             ExprKind::Scope { value, .. } => self.is_let(value),
             _ => false,
+        }
+    }
+
+    /// Recursively extract string literals from a THIR expression representing
+    /// `&[&str; N]`. Peels through `Scope` and `Borrow` wrappers to find the
+    /// inner `Array` of string `Literal`s.
+    fn extract_debug_strings(
+        thir: &Thir<'tcx>,
+        expr_id: ExprId,
+        symbols: &mut Vec<rustc_span::Symbol>,
+        failed: &mut bool,
+    ) {
+        match thir[expr_id].kind {
+            // Peel through scopes
+            ExprKind::Scope { value, .. } => {
+                Self::extract_debug_strings(thir, value, symbols, failed);
+            }
+            // Peel through borrows (&[...])
+            ExprKind::Borrow { arg, .. } => {
+                Self::extract_debug_strings(thir, arg, symbols, failed);
+            }
+            // Peel through unsizing coercions (&[&str; N] → &[&str])
+            ExprKind::PointerCoercion { source, .. } => {
+                Self::extract_debug_strings(thir, source, symbols, failed);
+            }
+            // Peel through derefs
+            ExprKind::Deref { arg } => {
+                Self::extract_debug_strings(thir, arg, symbols, failed);
+            }
+            // The array itself
+            ExprKind::Array { ref fields } => {
+                for &field_id in fields.iter() {
+                    Self::extract_debug_strings(thir, field_id, symbols, failed);
+                }
+            }
+            // A string literal
+            ExprKind::Literal { lit, neg: false } if matches!(lit.node, LitKind::Str(..)) => {
+                if let LitKind::Str(sym, _) = lit.node {
+                    symbols.push(sym);
+                }
+            }
+            // Anything else is unexpected
+            _ => {
+                *failed = true;
+            }
         }
     }
 }
