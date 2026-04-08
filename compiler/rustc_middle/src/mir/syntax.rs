@@ -505,9 +505,10 @@ pub enum NonDivergingIntrinsic<'tcx> {
     /// I vaguely remember Ralf saying somewhere that he thought it should not be.
     CopyNonOverlapping(CopyNonOverlapping<'tcx>),
 
-    /// Carries user-specified debug annotation strings, extracted during MIR building.
-    /// Codegen emits these as backend-specific debug metadata (e.g., `@llvm.codeview.annotation`
-    /// on MSVC targets). No runtime effect — purely debug metadata.
+    /// Denotes a debug annotation.
+    /// 
+    /// Gets lowered to `llvm.codeview.annotation` on LLVM for MSVC targets.
+    /// Is a no-op on other targets and backends.
     DebugAnnotation(
         #[type_foldable(identity)]
         #[type_visitable(ignore)]

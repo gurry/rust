@@ -389,9 +389,6 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
             sym::breakpoint => {
                 unimplemented!();
             }
-            sym::debug_annotation => {
-                bug!("debug_annotation should be handled in block.rs");
-            }
             sym::va_arg => {
                 unimplemented!();
             }

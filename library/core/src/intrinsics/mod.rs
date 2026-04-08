@@ -336,19 +336,16 @@ pub const fn prefetch_write_instruction<T, const LOCALITY: i32>(data: *const T) 
 #[rustc_nounwind]
 pub fn breakpoint();
 
-/// Emits a debug annotation that will appear in PDB debug info on Windows.
-///
-/// It is equivalent to MSVC's `__annotation()` intrinsic.
-///
-/// Takes a slice of string literal annotations that are lowered to an
-/// MDTuple of MDStrings in the generated LLVM IR. All strings must be
-/// compile-time constants.
-///
-/// On non-Windows platforms this intrinsic is a no-op.
+/// Emits a call to [`llvm.codeview.annotation`](https://llvm.org/docs/LangRef.html#llvm-codeview-annotation-intrinsic)
+/// which results in `strings` being written to the
+/// PDB as an `S_ANNOTATION` record.
+/// 
+/// Works only with Windows targets and the LLVM backend.
+/// Is a no-op on other targets and backends.
 #[unstable(feature = "debug_annotation", issue = "none")]
 #[rustc_intrinsic]
 #[rustc_nounwind]
-pub fn debug_annotation(_annotations: &'static [&'static str]);
+pub fn debug_annotation(_strings: &'static [&'static str]);
 
 /// Magic intrinsic that derives its meaning from attributes
 /// attached to the function.

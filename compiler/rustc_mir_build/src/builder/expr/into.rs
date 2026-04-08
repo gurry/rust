@@ -366,8 +366,11 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     None
                 })
             }
-            // Some intrinsics are handled here because they desperately want to avoid introducing
-            // unnecessary copies.
+            // Some intrinsics are handled here:
+            // - write_via_move and write_box_via_move because they desperately want
+            //   to avoid introducing unnecessary copies.
+            // - debug_annoation because it is easier to extract its argument here
+            //   than in codegen where it will require walking MIR.
             ExprKind::Call { ty, fun, ref args, .. }
                 if let ty::FnDef(def_id, generic_args) = *ty.kind()
                     && let Some(intrinsic) = this.tcx.intrinsic(def_id)
@@ -444,54 +447,48 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                         );
                         block.unit()
                     }
+                    sym::debug_annotation => {
+                        // Extract strings from argument
+                        let mut symbols = Vec::new();
+                        let mut extraction_failed = false;
+                        if let Some(&arg_id) = args.first() {
+                            Self::extract_debug_strings(
+                                &this.thir,
+                                arg_id,
+                                &mut symbols,
+                                &mut extraction_failed,
+                            );
+                        }
+
+                        if extraction_failed || symbols.is_empty() {
+                            this.tcx.dcx().span_err(
+                                expr_span,
+                                "debug_annotation requires constant string literal arguments",
+                            );
+                        } else {
+                            let source_info = this.source_info(expr_span);
+                            this.cfg.push(
+                                block,
+                                Statement::new(
+                                    source_info,
+                                    StatementKind::Intrinsic(Box::new(
+                                        NonDivergingIntrinsic::DebugAnnotation(symbols.into_boxed_slice()),
+                                    )),
+                                ),
+                            );
+                        }
+
+                        // Assign unit to destination
+                        let unit_rvalue = Rvalue::Use(Operand::Constant(Box::new(ConstOperand {
+                            span: expr_span,
+                            user_ty: None,
+                            const_: Const::zero_sized(this.tcx.types.unit),
+                        })));
+                        this.cfg.push_assign(block, this.source_info(expr_span), destination, unit_rvalue);
+                        block.unit()
+                    }
                     _ => rustc_middle::bug!(),
                 }
-            }
-            ExprKind::Call { ty, fun, ref args, .. }
-                if let ty::FnDef(def_id, _) = *ty.kind()
-                    && let Some(intrinsic) = this.tcx.intrinsic(def_id)
-                    && intrinsic.name == sym::debug_annotation =>
-            {
-                let _fun = unpack!(block = this.as_local_operand(block, fun));
-
-                // Extract strings from THIR argument: &[&str; N] or &[&str]
-                let mut symbols = Vec::new();
-                let mut extraction_failed = false;
-                if let Some(&arg_id) = args.first() {
-                    Self::extract_debug_strings(
-                        &this.thir,
-                        arg_id,
-                        &mut symbols,
-                        &mut extraction_failed,
-                    );
-                }
-
-                if extraction_failed || symbols.is_empty() {
-                    this.tcx.dcx().span_err(
-                        expr_span,
-                        "debug_annotation requires constant string literal arguments",
-                    );
-                } else {
-                    let source_info = this.source_info(expr_span);
-                    this.cfg.push(
-                        block,
-                        Statement::new(
-                            source_info,
-                            StatementKind::Intrinsic(Box::new(
-                                NonDivergingIntrinsic::DebugAnnotation(symbols.into_boxed_slice()),
-                            )),
-                        ),
-                    );
-                }
-
-                // Assign unit to destination
-                let unit_rvalue = Rvalue::Use(Operand::Constant(Box::new(ConstOperand {
-                    span: expr_span,
-                    user_ty: None,
-                    const_: Const::zero_sized(this.tcx.types.unit),
-                })));
-                this.cfg.push_assign(block, this.source_info(expr_span), destination, unit_rvalue);
-                block.unit()
             }
             ExprKind::Call { ty: _, fun, ref args, from_hir_call, fn_span } => {
                 let fun = unpack!(block = this.as_local_operand(block, fun));
@@ -946,8 +943,8 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         }
     }
 
-    /// Recursively extract string literals from a THIR expression representing
-    /// `&[&str; N]`. Peels through `Scope` and `Borrow` wrappers to find the
+    /// Recursively extract string literals from expr representing
+    /// `&[&str]`. Peels through `Scope` and `Borrow` wrappers to find the
     /// inner `Array` of string `Literal`s.
     fn extract_debug_strings(
         thir: &Thir<'tcx>,
@@ -978,7 +975,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     Self::extract_debug_strings(thir, field_id, symbols, failed);
                 }
             }
-            // A string literal
+            // An individual string literal in the array
             ExprKind::Literal { lit, neg: false } if matches!(lit.node, LitKind::Str(..)) => {
                 if let LitKind::Str(sym, _) = lit.node {
                     symbols.push(sym);

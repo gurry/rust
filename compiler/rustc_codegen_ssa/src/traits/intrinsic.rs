@@ -51,7 +51,5 @@ pub trait IntrinsicCallBuilderMethods<'tcx>: BackendTypes {
     fn va_end(&mut self, val: Self::Value) -> Self::Value;
 
     /// Emit a debug annotation with the given strings.
-    /// The strings are passed as raw bytes that will become MDStrings in the LLVM IR.
-    /// On non-Windows targets or when debug info is not enabled, this is a no-op.
     fn debug_annotation(&mut self, strings: &[&[u8]]);
 }

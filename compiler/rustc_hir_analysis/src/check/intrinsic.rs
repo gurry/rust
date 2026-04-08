@@ -295,7 +295,7 @@ pub(crate) fn check_intrinsic_type(
         sym::unreachable => (0, 0, vec![], tcx.types.never),
         sym::breakpoint => (0, 0, vec![], tcx.types.unit),
         sym::debug_annotation => {
-            // debug_annotation(annotations: &'static [&'static str]) -> ()
+            // debug_annotation(strings: &'static [&'static str]) -> ()
             // 0 type params, 0 const params, 1 input (&'static [&'static str]), returns unit
             let str_ref = Ty::new_imm_ref(tcx, tcx.lifetimes.re_static, tcx.types.str_);
             let slice_ty = Ty::new_slice(tcx, str_ref);

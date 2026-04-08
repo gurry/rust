@@ -1025,16 +1025,18 @@ pub const fn prefetch_read_instruction<T>(ptr: *const T, locality: Locality) {
         Locality::L1 => intrinsics::prefetch_read_instruction::<T, { Locality::L1.to_llvm() }>(ptr),
     }
 }
-/// Emits a debug annotation with one or more labels that will appear in
-/// PDB debug info on Windows. This is similar to MSVC's `__annotation()`
-/// intrinsic.
-///
-/// On non-Windows platforms, this macro is a no-op.
+
+/// Emits a call to [`llvm.codeview.annotation`](https://llvm.org/docs/LangRef.html#llvm-codeview-annotation-intrinsic)
+/// which results in `strings` being written to the
+/// PDB as an `S_ANNOTATION` record.
+/// 
+/// Works only with Windows targets and the LLVM backend.
+/// Is a no-op on other targets and backends.
 #[unstable(feature = "debug_annotation", issue = "none")]
 #[macro_export]
 macro_rules! debug_annotation {
-    ($($msg:literal),+ $(,)?) => {{
-        $crate::intrinsics::debug_annotation(&[$($msg),+])
+    ($($string_:literal),+ $(,)?) => {{
+        $crate::intrinsics::debug_annotation(&[$($string_),+])
     }};
 }
 
