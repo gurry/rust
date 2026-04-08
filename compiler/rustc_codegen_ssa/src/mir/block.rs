@@ -941,16 +941,16 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                             return merging_succ;
                         }
 
-                        // Emit a CodeView annotation from a &[&str] slice constant.
+                        // Emit a debug annotation from a &[&str] slice constant.
                         // We extract individual string values from the MIR constant
                         // and pass them to the backend for LLVM metadata generation.
-                        if intrinsic.name == sym::codeview_annotation {
+                        if intrinsic.name == sym::debug_annotation {
                             if let Some(target) = target {
                                 if let Some(arg) = args.first() {
                                     let strings =
                                         self.extract_str_slice_from_operand(bx.tcx(), &arg.node);
                                     if !strings.is_empty() {
-                                        bx.codeview_annotation(&strings);
+                                        bx.debug_annotation(&strings);
                                     }
                                 }
                                 return helper.funclet_br(self, bx, target, mergeable_succ);

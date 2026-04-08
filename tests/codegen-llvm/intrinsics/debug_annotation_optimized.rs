@@ -1,15 +1,15 @@
 //@ only-windows
 //@ compile-flags: -Copt-level=2
 //
-// Verify that codeview annotations survive LLVM optimizations.
+// Verify that debug annotations survive LLVM optimizations.
 // The llvm.codeview.annotation intrinsic is marked noduplicate and
 // writes to inaccessible memory, so LLVM must not remove it.
 
 #![crate_type = "lib"]
-#![feature(codeview_annotation)]
+#![feature(debug_annotation)]
 #![feature(core_intrinsics)]
 
-use std::intrinsics::codeview_annotation;
+use std::intrinsics::debug_annotation;
 
 // Verify that an annotation inside a function with other code is not
 // removed even when surrounding code is optimized.
@@ -17,7 +17,7 @@ use std::intrinsics::codeview_annotation;
 // CHECK: call void @llvm.codeview.annotation(metadata [[COMP:![0-9]+]])
 #[no_mangle]
 pub fn annotation_with_computation(x: u32) -> u32 {
-    codeview_annotation(&["in_computation"]);
+    debug_annotation(&["in_computation"]);
     x.wrapping_mul(31).wrapping_add(17)
 }
 
@@ -27,8 +27,8 @@ pub fn annotation_with_computation(x: u32) -> u32 {
 // CHECK: call void @llvm.codeview.annotation(metadata [[SECOND:![0-9]+]])
 #[no_mangle]
 pub fn multiple_annotations_same_fn() {
-    codeview_annotation(&["first"]);
-    codeview_annotation(&["second"]);
+    debug_annotation(&["first"]);
+    debug_annotation(&["second"]);
 }
 
 // Verify that annotations survive inlining: the annotation from
@@ -42,7 +42,7 @@ pub fn annotation_after_inlining() {
 
 #[inline(always)]
 fn annotated_helper() {
-    codeview_annotation(&["from_inlined_fn"]);
+    debug_annotation(&["from_inlined_fn"]);
 }
 
 // CHECK-DAG: [[COMP]] = !{!"in_computation"}

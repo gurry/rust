@@ -336,7 +336,7 @@ pub const fn prefetch_write_instruction<T, const LOCALITY: i32>(data: *const T) 
 #[rustc_nounwind]
 pub fn breakpoint();
 
-/// Emits a CodeView annotation that will appear in PDB debug info on Windows.
+/// Emits a debug annotation that will appear in PDB debug info on Windows.
 ///
 /// It is equivalent to MSVC's `__annotation()` intrinsic.
 ///
@@ -345,10 +345,10 @@ pub fn breakpoint();
 /// compile-time constants.
 ///
 /// On non-Windows platforms this intrinsic is a no-op.
-#[unstable(feature = "codeview_annotation", issue = "none")]
+#[unstable(feature = "debug_annotation", issue = "none")]
 #[rustc_intrinsic]
 #[rustc_nounwind]
-pub fn codeview_annotation(_annotations: &'static [&'static str]);
+pub fn debug_annotation(_annotations: &'static [&'static str]);
 
 /// Magic intrinsic that derives its meaning from attributes
 /// attached to the function.

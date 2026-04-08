@@ -389,8 +389,8 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
             sym::breakpoint => {
                 unimplemented!();
             }
-            sym::codeview_annotation => {
-                bug!("codeview_annotation should be handled in block.rs");
+            sym::debug_annotation => {
+                bug!("debug_annotation should be handled in block.rs");
             }
             sym::va_arg => {
                 unimplemented!();
@@ -720,7 +720,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
         self.context.new_rvalue_from_int(self.int_type, 0)
     }
 
-    fn codeview_annotation(&mut self, _strings: &[&[u8]]) {
+    fn debug_annotation(&mut self, _strings: &[&[u8]]) {
         // No-op as unlike LLVM GGC has no intrinsic we can lower to
     }
 }

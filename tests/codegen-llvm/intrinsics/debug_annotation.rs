@@ -2,37 +2,37 @@
 //@ compile-flags: -C no-prepopulate-passes
 
 #![crate_type = "lib"]
-#![feature(codeview_annotation)]
+#![feature(debug_annotation)]
 #![feature(core_intrinsics)]
 
-use std::intrinsics::codeview_annotation;
+use std::intrinsics::debug_annotation;
 
 // CHECK-LABEL: @intrinsic_single_annotation
 // CHECK: call void @llvm.codeview.annotation(metadata [[SINGLE:![0-9]+]])
 #[no_mangle]
 pub fn intrinsic_single_annotation() {
-    codeview_annotation(&["test_annotation"]);
+    debug_annotation(&["test_annotation"]);
 }
 
 // CHECK-LABEL: @intrinsic_multiple_annotations
 // CHECK: call void @llvm.codeview.annotation(metadata [[MULTI:![0-9]+]])
 #[no_mangle]
 pub fn intrinsic_multiple_annotations() {
-    codeview_annotation(&["category", "subcategory", "details"]);
+    debug_annotation(&["category", "subcategory", "details"]);
 }
 
 // CHECK-LABEL: @macro_single_annotation
 // CHECK: call void @llvm.codeview.annotation(metadata [[MACRO_SINGLE:![0-9]+]])
 #[no_mangle]
 pub fn macro_single_annotation() {
-    std::hint::codeview_annotation!("macro_test");
+    std::hint::debug_annotation!("macro_test");
 }
 
 // CHECK-LABEL: @macro_multiple_annotations
 // CHECK: call void @llvm.codeview.annotation(metadata [[MACRO_MULTI:![0-9]+]])
 #[no_mangle]
 pub fn macro_multiple_annotations() {
-    std::hint::codeview_annotation!("Performance", "HotPath", "Critical");
+    std::hint::debug_annotation!("Performance", "HotPath", "Critical");
 }
 
 // Metadata definitions are at the end of LLVM IR, so check them here

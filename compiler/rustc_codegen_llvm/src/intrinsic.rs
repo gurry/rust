@@ -286,12 +286,12 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
                 return Ok(());
             }
             sym::breakpoint => self.call_intrinsic("llvm.debugtrap", &[], &[]),
-            sym::codeview_annotation => {
+            sym::debug_annotation => {
                 // Ideally should be codegenned here, but we get code genned
                 // operand (OperandRef) in this function instead of a MIR const
                 // that we can evaluate to get the string. Therefore as a hack
                 // we codegen directly in block.rs where we do have the const
-                bug!("codeview_annotation should be handled in block.rs");
+                bug!("debug_annotation should be handled in block.rs");
             }
             sym::va_arg => {
                 match result.layout.backend_repr {
@@ -844,7 +844,7 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
 
     /// HACK: this function does not belong in this impl at all
     /// but it will do for now as we have to put it somewhere
-    fn codeview_annotation(&mut self, strings: &[&[u8]]) {
+    fn debug_annotation(&mut self, strings: &[&[u8]]) {
         if !self.cx.sess().target.is_like_msvc {
             return;
         }

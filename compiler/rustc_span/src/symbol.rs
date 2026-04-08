@@ -618,7 +618,7 @@ symbols! {
         cmp_partialord_lt,
         cmpxchg16b_target_feature,
         cmse_nonsecure_entry,
-        codeview_annotation,
+        debug_annotation,
         coerce_pointee_validated,
         coerce_shared,
         coerce_unsized,
