@@ -474,13 +474,13 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                             Some(_) => {
                                 this.tcx.dcx().span_err(
                                     expr_span,
-                                    "codeview_annotation requires at least one string literal argument",
+                                    "codeview_annotation requires a non-empty array argument",
                                 );
                             }
                             None => {
                                 this.tcx.dcx().span_err(
                                     expr_span,
-                                    "codeview_annotation requires constant string literal arguments",
+                                    "codeview_annotation requires a constant argument",
                                 );
                             }
                         }

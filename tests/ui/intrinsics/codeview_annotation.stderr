@@ -1,17 +1,17 @@
-error: codeview_annotation requires constant string literal arguments
-  --> $DIR/codeview_annotation.rs:57:5
+error: codeview_annotation requires a constant argument
+  --> $DIR/codeview_annotation.rs:59:5
    |
 LL |     codeview_annotation(&[s]);
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: codeview_annotation requires constant string literal arguments
-  --> $DIR/codeview_annotation.rs:62:5
+error: codeview_annotation requires a constant argument
+  --> $DIR/codeview_annotation.rs:64:5
    |
 LL |     codeview_annotation(strs);
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: codeview_annotation requires at least one string literal argument
-  --> $DIR/codeview_annotation.rs:67:5
+error: codeview_annotation requires a non-empty array argument
+  --> $DIR/codeview_annotation.rs:69:5
    |
 LL |     codeview_annotation(&[]);
    |     ^^^^^^^^^^^^^^^^^^^^^^^^

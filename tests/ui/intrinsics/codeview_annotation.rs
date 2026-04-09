@@ -56,17 +56,17 @@ fn named_const_array_ref() {
 // Error case: local variable
 fn non_const_arg() {
     let s = "hello";
-    codeview_annotation(&[s]); //~ ERROR codeview_annotation requires constant string literal arguments
+    codeview_annotation(&[s]); //~ ERROR codeview_annotation requires a constant argument
 }
 
 // Error case: function parameter
 fn fn_param_arg(strs: &[&str]) {
-    codeview_annotation(strs); //~ ERROR codeview_annotation requires constant string literal arguments
+    codeview_annotation(strs); //~ ERROR codeview_annotation requires a constant argument
 }
 
 // Error case: empty array
 fn empty_array() {
-    codeview_annotation(&[]); //~ ERROR codeview_annotation requires at least one string literal argument
+    codeview_annotation(&[]); //~ ERROR codeview_annotation requires a non-empty array argument
 }
 
 fn main() {
