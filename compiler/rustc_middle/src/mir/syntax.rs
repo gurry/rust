@@ -506,7 +506,7 @@ pub enum NonDivergingIntrinsic<'tcx> {
     CopyNonOverlapping(CopyNonOverlapping<'tcx>),
 
     /// Denotes a debug annotation.
-    /// 
+    ///
     /// Gets lowered to `llvm.codeview.annotation` on LLVM for MSVC targets.
     /// Is a no-op on other targets and backends.
     DebugAnnotation(

@@ -370,11 +370,14 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             // - write_via_move and write_box_via_move because they desperately want
             //   to avoid introducing unnecessary copies.
             // - debug_annoation because it is easier to extract its argument here
-            //   than in codegen where it will require walking MIR.
+            //   than in codegen where it will require walking the MIR.
             ExprKind::Call { ty, fun, ref args, .. }
                 if let ty::FnDef(def_id, generic_args) = *ty.kind()
                     && let Some(intrinsic) = this.tcx.intrinsic(def_id)
-                    && matches!(intrinsic.name, sym::write_via_move | sym::write_box_via_move | sym::debug_annotation) =>
+                    && matches!(
+                        intrinsic.name,
+                        sym::write_via_move | sym::write_box_via_move | sym::debug_annotation
+                    ) =>
             {
                 // We still have to evaluate the callee expression as normal (but we don't care
                 // about its result).
@@ -448,34 +451,71 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                         block.unit()
                     }
                     sym::debug_annotation => {
-                        // Extract strings from argument
-                        let mut symbols = Vec::new();
-                        let mut extraction_failed = false;
-                        if let Some(&arg_id) = args.first() {
-                            Self::extract_debug_strings(
-                                &this.thir,
-                                arg_id,
-                                &mut symbols,
-                                &mut extraction_failed,
-                            );
-                        }
+                        // Extract string literals from `&["lit1", "lit2", ..]`.
+                        // Peel wrapper nodes to find the Array, then read each
+                        // element as a string literal.
+                        let result: Option<Vec<rustc_span::Symbol>> =
+                            args.first().and_then(|&arg_id| {
+                                let thir = &this.thir;
+                                let mut id = arg_id;
+                                loop {
+                                    match thir[id].kind {
+                                        ExprKind::Scope { value, .. }
+                                        | ExprKind::Borrow { arg: value, .. }
+                                        | ExprKind::PointerCoercion { source: value, .. }
+                                        | ExprKind::Deref { arg: value } => {
+                                            id = value;
+                                        }
+                                        ExprKind::Array { .. } => break,
+                                        _ => return None,
+                                    }
+                                }
+                                let ExprKind::Array { ref fields } = thir[id].kind else {
+                                    unreachable!()
+                                };
+                                let mut syms = Vec::with_capacity(fields.len());
+                                for &field_id in fields.iter() {
+                                    let mut fid = field_id;
+                                    while let ExprKind::Scope { value, .. } = thir[fid].kind {
+                                        fid = value;
+                                    }
+                                    let ExprKind::Literal { lit, neg: false } = thir[fid].kind
+                                    else {
+                                        return None;
+                                    };
+                                    let LitKind::Str(sym, _) = lit.node else { return None };
+                                    syms.push(sym);
+                                }
+                                Some(syms)
+                            });
 
-                        if extraction_failed || symbols.is_empty() {
-                            this.tcx.dcx().span_err(
-                                expr_span,
-                                "debug_annotation requires constant string literal arguments",
-                            );
-                        } else {
-                            let source_info = this.source_info(expr_span);
-                            this.cfg.push(
-                                block,
-                                Statement::new(
-                                    source_info,
-                                    StatementKind::Intrinsic(Box::new(
-                                        NonDivergingIntrinsic::DebugAnnotation(symbols.into_boxed_slice()),
-                                    )),
-                                ),
-                            );
+                        match result {
+                            Some(ref symbols) if !symbols.is_empty() => {
+                                let source_info = this.source_info(expr_span);
+                                this.cfg.push(
+                                    block,
+                                    Statement::new(
+                                        source_info,
+                                        StatementKind::Intrinsic(Box::new(
+                                            NonDivergingIntrinsic::DebugAnnotation(
+                                                symbols.clone().into_boxed_slice(),
+                                            ),
+                                        )),
+                                    ),
+                                );
+                            }
+                            Some(_) => {
+                                this.tcx.dcx().span_err(
+                                    expr_span,
+                                    "debug_annotation requires at least one string literal argument",
+                                );
+                            }
+                            None => {
+                                this.tcx.dcx().span_err(
+                                    expr_span,
+                                    "debug_annotation requires constant string literal arguments",
+                                );
+                            }
                         }
 
                         // Assign unit to destination
@@ -484,7 +524,12 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                             user_ty: None,
                             const_: Const::zero_sized(this.tcx.types.unit),
                         })));
-                        this.cfg.push_assign(block, this.source_info(expr_span), destination, unit_rvalue);
+                        this.cfg.push_assign(
+                            block,
+                            this.source_info(expr_span),
+                            destination,
+                            unit_rvalue,
+                        );
                         block.unit()
                     }
                     _ => rustc_middle::bug!(),
@@ -940,51 +985,6 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             ExprKind::Let { .. } => true,
             ExprKind::Scope { value, .. } => self.is_let(value),
             _ => false,
-        }
-    }
-
-    /// Recursively extract string literals from expr representing
-    /// `&[&str]`. Peels through `Scope` and `Borrow` wrappers to find the
-    /// inner `Array` of string `Literal`s.
-    fn extract_debug_strings(
-        thir: &Thir<'tcx>,
-        expr_id: ExprId,
-        symbols: &mut Vec<rustc_span::Symbol>,
-        failed: &mut bool,
-    ) {
-        match thir[expr_id].kind {
-            // Peel through scopes
-            ExprKind::Scope { value, .. } => {
-                Self::extract_debug_strings(thir, value, symbols, failed);
-            }
-            // Peel through borrows (&[...])
-            ExprKind::Borrow { arg, .. } => {
-                Self::extract_debug_strings(thir, arg, symbols, failed);
-            }
-            // Peel through unsizing coercions (&[&str; N] → &[&str])
-            ExprKind::PointerCoercion { source, .. } => {
-                Self::extract_debug_strings(thir, source, symbols, failed);
-            }
-            // Peel through derefs
-            ExprKind::Deref { arg } => {
-                Self::extract_debug_strings(thir, arg, symbols, failed);
-            }
-            // The array itself
-            ExprKind::Array { ref fields } => {
-                for &field_id in fields.iter() {
-                    Self::extract_debug_strings(thir, field_id, symbols, failed);
-                }
-            }
-            // An individual string literal in the array
-            ExprKind::Literal { lit, neg: false } if matches!(lit.node, LitKind::Str(..)) => {
-                if let LitKind::Str(sym, _) = lit.node {
-                    symbols.push(sym);
-                }
-            }
-            // Anything else is unexpected
-            _ => {
-                *failed = true;
-            }
         }
     }
 }
