@@ -452,11 +452,13 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                         block.unit()
                     }
                     sym::codeview_annotation => {
-                        let result = args
+                        // Extract strings from the `&[&str]` argument of codeview_annoation
+                        // and lower them into a CodviewAnnoation MIR intrinsic
+                        let strings = args
                             .first()
-                            .and_then(|&arg_id| this.get_codeview_annotation_arg(arg_id));
+                            .and_then(|&arg_id| this.extract_strings_from_array(arg_id));
 
-                        match result {
+                        match strings {
                             Some(strings) if !strings.is_empty() => {
                                 this.cfg.push(
                                     block,
@@ -954,13 +956,13 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         }
     }
 
-    /// Extract string symbols from a `codeview_annotation` argument expression.
+    /// Extract string from an string array expr.
     /// Peels through THIR wrapper nodes (Scope, Borrow, PointerCoercion, Deref)
-    /// to find either an inline Array of string literals/named consts, or a
+    /// to find either an inline array of string literals/named consts, or a
     /// whole NamedConst evaluating to `&[&str]` / `[&str; N]`.
-    fn get_codeview_annotation_arg(&self, arg_id: ExprId) -> Option<Vec<Symbol>> {
+    fn extract_strings_from_array(&self, expr_id: ExprId) -> Option<Vec<Symbol>> {
         // Peel away scopes, borrows etc.
-        let mut id = arg_id;
+        let mut id = expr_id;
         while let ExprKind::Scope { value, .. }
         | ExprKind::Borrow { arg: value, .. }
         | ExprKind::PointerCoercion { source: value, .. }
@@ -969,12 +971,14 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             id = value;
         }
         match self.thir[id].kind {
-            // Inline array: &["lit1", "lit2"] or &[CONST1, "lit2"]
             ExprKind::Array { ref fields } => {
                 let mut syms = Vec::with_capacity(fields.len());
                 for &field_id in fields.iter() {
                     let mut id = field_id;
-                    while let ExprKind::Scope { value, .. } = self.thir[id].kind {
+                    while let ExprKind::Scope { value, .. }
+                    | ExprKind::Borrow { arg: value, .. }
+                    | ExprKind::Deref { arg: value } = self.thir[id].kind
+                    {
                         id = value;
                     }
                     match self.thir[id].kind {

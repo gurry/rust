@@ -345,7 +345,7 @@ pub fn breakpoint();
 #[unstable(feature = "codeview_annotation", issue = "none")]
 #[rustc_intrinsic]
 #[rustc_nounwind]
-pub fn codeview_annotation(_strings: &'static [&'static str]);
+pub fn codeview_annotation(_strings: &[&str]);
 
 /// Magic intrinsic that derives its meaning from attributes
 /// attached to the function.

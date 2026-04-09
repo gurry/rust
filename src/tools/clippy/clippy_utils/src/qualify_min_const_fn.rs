@@ -231,6 +231,8 @@ fn check_statement<'tcx>(
 
         StatementKind::Intrinsic(box NonDivergingIntrinsic::Assume(op)) => check_operand(cx, op, span, body, msrv),
 
+        StatementKind::Intrinsic(box NonDivergingIntrinsic::CodeviewAnnotation(_)) => Ok(()),
+
         StatementKind::Intrinsic(box NonDivergingIntrinsic::CopyNonOverlapping(
             rustc_middle::mir::CopyNonOverlapping { dst, src, count },
         )) => {
