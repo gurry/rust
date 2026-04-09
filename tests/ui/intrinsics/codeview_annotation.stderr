@@ -1,26 +1,20 @@
 error: codeview_annotation requires constant string literal arguments
-  --> $DIR/codeview_annotation.rs:32:5
+  --> $DIR/codeview_annotation.rs:57:5
    |
 LL |     codeview_annotation(&[s]);
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: codeview_annotation requires constant string literal arguments
-  --> $DIR/codeview_annotation.rs:37:5
+  --> $DIR/codeview_annotation.rs:62:5
    |
 LL |     codeview_annotation(strs);
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: codeview_annotation requires constant string literal arguments
-  --> $DIR/codeview_annotation.rs:43:5
-   |
-LL |     codeview_annotation(&[MY_CONST]);
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
 error: codeview_annotation requires at least one string literal argument
-  --> $DIR/codeview_annotation.rs:48:5
+  --> $DIR/codeview_annotation.rs:67:5
    |
 LL |     codeview_annotation(&[]);
    |     ^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: aborting due to 4 previous errors
+error: aborting due to 3 previous errors
 

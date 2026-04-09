@@ -6,11 +6,12 @@ use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::stack::ensure_sufficient_stack;
 use rustc_hir as hir;
 use rustc_hir::lang_items::LangItem;
+use rustc_middle::mir::interpret::GlobalId;
 use rustc_middle::mir::*;
 use rustc_middle::span_bug;
 use rustc_middle::thir::*;
-use rustc_middle::ty::{self, CanonicalUserTypeAnnotation, Ty};
-use rustc_span::{DUMMY_SP, Spanned, sym};
+use rustc_middle::ty::{self, CanonicalUserTypeAnnotation, Ty, TyCtxt};
+use rustc_span::{DUMMY_SP, Spanned, Symbol, sym};
 use rustc_trait_selection::infer::InferCtxtExt;
 use tracing::{debug, instrument};
 
@@ -369,7 +370,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             // Some intrinsics are handled here:
             // - write_via_move and write_box_via_move because they desperately want
             //   to avoid introducing unnecessary copies.
-            // - debug_annoation because it is easier to extract its argument here
+            // - codeview_annoation because it is easier to extract its argument here
             //   than in codegen where it will require walking the MIR.
             ExprKind::Call { ty, fun, ref args, .. }
                 if let ty::FnDef(def_id, generic_args) = *ty.kind()
@@ -451,38 +452,9 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                         block.unit()
                     }
                     sym::codeview_annotation => {
-                        // Extract string literals from `&["lit1", "lit2", ..]`.
-                        // Peel wrapper nodes to find the Array, then read each
-                        // element as a string literal.
-                        let result: Option<Vec<rustc_span::Symbol>> =
-                            args.first().and_then(|&arg_id| {
-                                let thir = &this.thir;
-                                let mut id = arg_id;
-                                while let ExprKind::Scope { value, .. }
-                                | ExprKind::Borrow { arg: value, .. }
-                                | ExprKind::PointerCoercion { source: value, .. }
-                                | ExprKind::Deref { arg: value } = thir[id].kind
-                                {
-                                    id = value;
-                                }
-                                let ExprKind::Array { ref fields } = thir[id].kind else {
-                                    return None;
-                                };
-                                let mut syms = Vec::with_capacity(fields.len());
-                                for &field_id in fields.iter() {
-                                    let mut fid = field_id;
-                                    while let ExprKind::Scope { value, .. } = thir[fid].kind {
-                                        fid = value;
-                                    }
-                                    let ExprKind::Literal { lit, neg: false } = thir[fid].kind
-                                    else {
-                                        return None;
-                                    };
-                                    let LitKind::Str(sym, _) = lit.node else { return None };
-                                    syms.push(sym);
-                                }
-                                Some(syms)
-                            });
+                        let result = args.first().and_then(|&arg_id| {
+                            extract_codeview_annotation_strings(this.tcx, &this.thir, arg_id)
+                        });
 
                         match result {
                             Some(ref symbols) if !symbols.is_empty() => {
@@ -981,5 +953,119 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             ExprKind::Scope { value, .. } => self.is_let(value),
             _ => false,
         }
+    }
+}
+
+/// Extract string symbols from a `codeview_annotation` argument expression.
+/// Peels through THIR wrapper nodes (Scope, Borrow, PointerCoercion, Deref)
+/// to find either an inline Array of string literals/named consts, or a
+/// whole NamedConst evaluating to `&[&str]` / `[&str; N]`.
+fn extract_codeview_annotation_strings<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    thir: &Thir<'tcx>,
+    arg_id: ExprId,
+) -> Option<Vec<Symbol>> {
+    let mut id = arg_id;
+    while let ExprKind::Scope { value, .. }
+    | ExprKind::Borrow { arg: value, .. }
+    | ExprKind::PointerCoercion { source: value, .. }
+    | ExprKind::Deref { arg: value } = thir[id].kind
+    {
+        id = value;
+    }
+    match thir[id].kind {
+        // Inline array: &["lit1", "lit2"] or &[CONST1, "lit2"]
+        ExprKind::Array { ref fields } => {
+            let mut syms = Vec::with_capacity(fields.len());
+            for &field_id in fields.iter() {
+                let mut fid = field_id;
+                while let ExprKind::Scope { value, .. } = thir[fid].kind {
+                    fid = value;
+                }
+                match thir[fid].kind {
+                    ExprKind::Literal { lit, neg: false }
+                        if let LitKind::Str(sym, _) = lit.node =>
+                    {
+                        syms.push(sym);
+                    }
+                    ExprKind::NamedConst { def_id, args, .. } => {
+                        let s = eval_named_const_as_str(tcx, def_id, args, thir[fid].ty)?;
+                        syms.push(s);
+                    }
+                    _ => return None,
+                }
+            }
+            Some(syms)
+        }
+        // Whole named const: STRS where STRS: &[&str] or [&str; N]
+        ExprKind::NamedConst { def_id, args, .. } => {
+            eval_named_const_as_str_slice(tcx, def_id, args, thir[id].ty)
+        }
+        _ => None,
+    }
+}
+
+/// Evaluate a `NamedConst` with type `&str` to a `Symbol`.
+fn eval_named_const_as_str<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    def_id: rustc_hir::def_id::DefId,
+    args: ty::GenericArgsRef<'tcx>,
+    ty: Ty<'tcx>,
+) -> Option<Symbol> {
+    let instance = ty::Instance::new_raw(def_id, args);
+    let cid = GlobalId { instance, promoted: None };
+    let typing_env = ty::TypingEnv::post_analysis(tcx, def_id);
+    let Ok(Ok(valtree)) = tcx.const_eval_global_id_for_typeck(typing_env, cid, DUMMY_SP) else {
+        return None;
+    };
+    let value = ty::Value { ty, valtree };
+    let bytes = value.try_to_raw_bytes(tcx)?;
+    let s = std::str::from_utf8(bytes).ok()?;
+    Some(Symbol::intern(s))
+}
+
+/// Evaluate a `NamedConst` with type `&[&str]` or `[&str; N]` to a `Vec<Symbol>`.
+/// Walks the ValTree structure: peels references, iterates array/slice branches,
+/// and reads each `&str` element's raw bytes.
+fn eval_named_const_as_str_slice<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    def_id: rustc_hir::def_id::DefId,
+    args: ty::GenericArgsRef<'tcx>,
+    ty: Ty<'tcx>,
+) -> Option<Vec<Symbol>> {
+    let instance = ty::Instance::new_raw(def_id, args);
+    let cid = GlobalId { instance, promoted: None };
+    let typing_env = ty::TypingEnv::post_analysis(tcx, def_id);
+    let Ok(Ok(valtree)) = tcx.const_eval_global_id_for_typeck(typing_env, cid, DUMMY_SP) else {
+        return None;
+    };
+    let value = ty::Value { ty, valtree };
+    extract_strs_from_value(tcx, value)
+}
+
+/// Recursively extract string symbols from a `ty::Value`.
+/// Handles `&str`, `&[&str]`, `[&str; N]`, and `&[&str; N]`.
+fn extract_strs_from_value<'tcx>(tcx: TyCtxt<'tcx>, value: ty::Value<'tcx>) -> Option<Vec<Symbol>> {
+    match value.ty.kind() {
+        ty::Ref(_, inner_ty, _) if inner_ty.is_str() => {
+            let bytes = value.try_to_raw_bytes(tcx)?;
+            let s = std::str::from_utf8(bytes).ok()?;
+            Some(vec![Symbol::intern(s)])
+        }
+        ty::Ref(_, inner_ty, _) => {
+            // Peel reference: &[&str] or &[&str; N]
+            extract_strs_from_value(tcx, ty::Value { ty: *inner_ty, valtree: value.valtree })
+        }
+        ty::Array(..) | ty::Slice(_) => {
+            let elems = value.try_to_branch()?;
+            let mut syms = Vec::with_capacity(elems.len());
+            for c in elems {
+                let elem_value = c.try_to_value()?;
+                let mut elem_syms = extract_strs_from_value(tcx, elem_value)?;
+                syms.append(&mut elem_syms);
+            }
+            Some(syms)
+        }
+        _ => None,
     }
 }

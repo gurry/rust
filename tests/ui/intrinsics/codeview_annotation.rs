@@ -26,7 +26,34 @@ fn macro_multiple() {
     std::hint::codeview_annotation!("Performance", "HotPath", "Critical");
 }
 
-// Error case: non-constant argument
+// Named const elements
+const ANNOTATION_A: &str = "hello";
+const ANNOTATION_B: &str = "there";
+
+fn named_const_elements() {
+    codeview_annotation(&[ANNOTATION_A, ANNOTATION_B]);
+}
+
+// Named const and literal
+fn mixed_const_and_literal() {
+    codeview_annotation(&[ANNOTATION_A, "world"]);
+}
+
+// Const slice
+const STRS_SLICE: &[&str] = &["hello", "there"];
+
+fn named_const_slice() {
+    codeview_annotation(STRS_SLICE);
+}
+
+// Ref to named const array
+const STRS_ARRAY: [&str; 2] = ["hello", "there"];
+
+fn named_const_array_ref() {
+    codeview_annotation(&STRS_ARRAY);
+}
+
+// Error case: local variable
 fn non_const_arg() {
     let s = "hello";
     codeview_annotation(&[s]); //~ ERROR codeview_annotation requires constant string literal arguments
@@ -35,12 +62,6 @@ fn non_const_arg() {
 // Error case: function parameter
 fn fn_param_arg(strs: &[&str]) {
     codeview_annotation(strs); //~ ERROR codeview_annotation requires constant string literal arguments
-}
-
-// Error case: named const
-const MY_CONST: &str = "hello";
-fn named_const_arg() {
-    codeview_annotation(&[MY_CONST]); //~ ERROR codeview_annotation requires constant string literal arguments
 }
 
 // Error case: empty array
@@ -53,8 +74,11 @@ fn main() {
     intrinsic_multiple();
     macro_single();
     macro_multiple();
+    named_const_elements();
+    mixed_const_and_literal();
+    named_const_slice();
+    named_const_array_ref();
     non_const_arg();
     fn_param_arg(&["a"]);
-    named_const_arg();
     empty_array();
 }
