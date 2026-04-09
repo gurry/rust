@@ -374,7 +374,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             ExprKind::Call { ty, fun, ref args, .. }
                 if let ty::FnDef(def_id, generic_args) = *ty.kind()
                     && let Some(intrinsic) = this.tcx.intrinsic(def_id)
-                    && matches!(intrinsic.name, sym::write_via_move | sym::write_box_via_move) =>
+                    && matches!(intrinsic.name, sym::write_via_move | sym::write_box_via_move | sym::debug_annotation) =>
             {
                 // We still have to evaluate the callee expression as normal (but we don't care
                 // about its result).
