@@ -749,7 +749,7 @@ symbols! {
         dead_code,
         dealloc,
         debug,
-        debug_annotation,
+        codeview_annotation,
         debug_assert_eq_macro,
         debug_assert_macro,
         debug_assert_ne_macro,

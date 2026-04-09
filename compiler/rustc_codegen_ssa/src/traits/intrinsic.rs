@@ -50,6 +50,6 @@ pub trait IntrinsicCallBuilderMethods<'tcx>: BackendTypes {
     /// Rust defined C-variadic functions return.
     fn va_end(&mut self, val: Self::Value) -> Self::Value;
 
-    /// Emit a debug annotation with the given strings.
-    fn debug_annotation(&mut self, strings: &[&[u8]]);
+    /// Emit a codeview_annotation with the given strings.
+    fn codeview_annotation(&mut self, strings: &[&[u8]]);
 }

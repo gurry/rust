@@ -342,10 +342,10 @@ pub fn breakpoint();
 ///
 /// Works only with Windows targets and the LLVM backend.
 /// Is a no-op on other targets and backends.
-#[unstable(feature = "debug_annotation", issue = "none")]
+#[unstable(feature = "codeview_annotation", issue = "none")]
 #[rustc_intrinsic]
 #[rustc_nounwind]
-pub fn debug_annotation(_strings: &'static [&'static str]);
+pub fn codeview_annotation(_strings: &'static [&'static str]);
 
 /// Magic intrinsic that derives its meaning from attributes
 /// attached to the function.

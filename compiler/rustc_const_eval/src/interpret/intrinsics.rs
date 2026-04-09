@@ -776,7 +776,7 @@ impl<'tcx, M: Machine<'tcx>> InterpCx<'tcx, M> {
                 let count = self.eval_operand(count, None)?;
                 self.copy_intrinsic(&src, &dst, &count, /* nonoverlapping */ true)
             }
-            NonDivergingIntrinsic::DebugAnnotation(_) => interp_ok(()),
+            NonDivergingIntrinsic::CodeviewAnnotation(_) => interp_ok(()),
         }
     }
 

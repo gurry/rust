@@ -1032,14 +1032,14 @@ pub const fn prefetch_read_instruction<T>(ptr: *const T, locality: Locality) {
 ///
 /// Works only with Windows targets and the LLVM backend.
 /// Is a no-op on other targets and backends.
-#[unstable(feature = "debug_annotation", issue = "none")]
+#[unstable(feature = "codeview_annotation", issue = "none")]
 #[macro_export]
-macro_rules! debug_annotation {
+macro_rules! codeview_annotation {
     ($($string_:literal),+ $(,)?) => {{
-        $crate::intrinsics::debug_annotation(&[$($string_),+])
+        $crate::intrinsics::codeview_annotation(&[$($string_),+])
     }};
 }
 
-#[unstable(feature = "debug_annotation", issue = "none")]
+#[unstable(feature = "codeview_annotation", issue = "none")]
 #[doc(inline)]
-pub use debug_annotation;
+pub use codeview_annotation;

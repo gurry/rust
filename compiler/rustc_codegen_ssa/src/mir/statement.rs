@@ -94,11 +94,11 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
 
                 bx.memcpy(dst, align, src, align, bytes, crate::MemFlags::empty(), None);
             }
-            mir::StatementKind::Intrinsic(box NonDivergingIntrinsic::DebugAnnotation(
+            mir::StatementKind::Intrinsic(box NonDivergingIntrinsic::CodeviewAnnotation(
                 ref symbols,
             )) => {
                 let strings: Vec<&[u8]> = symbols.iter().map(|s| s.as_str().as_bytes()).collect();
-                bx.debug_annotation(&strings);
+                bx.codeview_annotation(&strings);
             }
             mir::StatementKind::FakeRead(..)
             | mir::StatementKind::Retag { .. }

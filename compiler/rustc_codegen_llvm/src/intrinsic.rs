@@ -835,7 +835,7 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
         self.call_intrinsic("llvm.va_end", &[self.val_ty(va_list)], &[va_list])
     }
 
-    fn debug_annotation(&mut self, strings: &[&[u8]]) {
+    fn codeview_annotation(&mut self, strings: &[&[u8]]) {
         if !self.cx.sess().target.is_like_msvc {
             return;
         }

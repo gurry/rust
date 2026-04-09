@@ -102,7 +102,7 @@ fn intrinsic_operation_unsafety(tcx: TyCtxt<'_>, intrinsic_id: LocalDefId) -> hi
         | sym::ctlz
         | sym::ctpop
         | sym::cttz
-        | sym::debug_annotation
+        | sym::codeview_annotation
         | sym::discriminant_value
         | sym::exp2f16
         | sym::exp2f32
@@ -294,8 +294,8 @@ pub(crate) fn check_intrinsic_type(
         sym::amdgpu_dispatch_ptr => (0, 0, vec![], Ty::new_imm_ptr(tcx, tcx.types.unit)),
         sym::unreachable => (0, 0, vec![], tcx.types.never),
         sym::breakpoint => (0, 0, vec![], tcx.types.unit),
-        sym::debug_annotation => {
-            // debug_annotation(strings: &'static [&'static str]) -> ()
+        sym::codeview_annotation => {
+            // codeview_annotation(strings: &'static [&'static str]) -> ()
             // 0 type params, 0 const params, 1 input (&'static [&'static str]), returns unit
             let str_ref = Ty::new_imm_ref(tcx, tcx.lifetimes.re_static, tcx.types.str_);
             let slice_ty = Ty::new_slice(tcx, str_ref);

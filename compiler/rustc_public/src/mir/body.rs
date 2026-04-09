@@ -465,7 +465,7 @@ pub struct CopyNonOverlapping {
 pub enum NonDivergingIntrinsic {
     Assume(Operand),
     CopyNonOverlapping(CopyNonOverlapping),
-    DebugAnnotation(Vec<String>),
+    CodeviewAnnotation(Vec<String>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

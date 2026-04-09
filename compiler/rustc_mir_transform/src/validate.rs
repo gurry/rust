@@ -1540,7 +1540,7 @@ impl<'a, 'tcx> Visitor<'tcx> for TypeChecker<'a, 'tcx> {
                     self.fail(location, format!("bad arg ({op_cnt_ty} != usize)"))
                 }
             }
-            StatementKind::Intrinsic(box NonDivergingIntrinsic::DebugAnnotation(_)) => {}
+            StatementKind::Intrinsic(box NonDivergingIntrinsic::CodeviewAnnotation(_)) => {}
             StatementKind::SetDiscriminant { place, .. } => {
                 if self.body.phase < MirPhase::Runtime(RuntimePhase::Initial) {
                     self.fail(location, "`SetDiscriminant`is not allowed until deaggregation");

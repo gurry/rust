@@ -376,7 +376,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     && let Some(intrinsic) = this.tcx.intrinsic(def_id)
                     && matches!(
                         intrinsic.name,
-                        sym::write_via_move | sym::write_box_via_move | sym::debug_annotation
+                        sym::write_via_move | sym::write_box_via_move | sym::codeview_annotation
                     ) =>
             {
                 // We still have to evaluate the callee expression as normal (but we don't care
@@ -450,7 +450,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                         );
                         block.unit()
                     }
-                    sym::debug_annotation => {
+                    sym::codeview_annotation => {
                         // Extract string literals from `&["lit1", "lit2", ..]`.
                         // Peel wrapper nodes to find the Array, then read each
                         // element as a string literal.
@@ -471,7 +471,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                     }
                                 }
                                 let ExprKind::Array { ref fields } = thir[id].kind else {
-                                    unreachable!()
+                                    span_bug!(expr_span, "expected Array expr in codeview_annotation")
                                 };
                                 let mut syms = Vec::with_capacity(fields.len());
                                 for &field_id in fields.iter() {
@@ -497,7 +497,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                     Statement::new(
                                         source_info,
                                         StatementKind::Intrinsic(Box::new(
-                                            NonDivergingIntrinsic::DebugAnnotation(
+                                            NonDivergingIntrinsic::CodeviewAnnotation(
                                                 symbols.clone().into_boxed_slice(),
                                             ),
                                         )),
@@ -507,13 +507,13 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                             Some(_) => {
                                 this.tcx.dcx().span_err(
                                     expr_span,
-                                    "debug_annotation requires at least one string literal argument",
+                                    "codeview_annotation requires at least one string literal argument",
                                 );
                             }
                             None => {
                                 this.tcx.dcx().span_err(
                                     expr_span,
-                                    "debug_annotation requires constant string literal arguments",
+                                    "codeview_annotation requires constant string literal arguments",
                                 );
                             }
                         }

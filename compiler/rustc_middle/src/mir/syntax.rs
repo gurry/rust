@@ -505,11 +505,11 @@ pub enum NonDivergingIntrinsic<'tcx> {
     /// I vaguely remember Ralf saying somewhere that he thought it should not be.
     CopyNonOverlapping(CopyNonOverlapping<'tcx>),
 
-    /// Denotes a debug annotation.
+    /// Denotes a codeview_annotation.
     ///
     /// Gets lowered to `llvm.codeview.annotation` on LLVM for MSVC targets.
     /// Is a no-op on other targets and backends.
-    DebugAnnotation(
+    CodeviewAnnotation(
         #[type_foldable(identity)]
         #[type_visitable(ignore)]
         Box<[rustc_span::Symbol]>,
