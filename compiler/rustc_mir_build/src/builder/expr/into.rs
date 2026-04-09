@@ -458,20 +458,15 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                             args.first().and_then(|&arg_id| {
                                 let thir = &this.thir;
                                 let mut id = arg_id;
-                                loop {
-                                    match thir[id].kind {
-                                        ExprKind::Scope { value, .. }
-                                        | ExprKind::Borrow { arg: value, .. }
-                                        | ExprKind::PointerCoercion { source: value, .. }
-                                        | ExprKind::Deref { arg: value } => {
-                                            id = value;
-                                        }
-                                        ExprKind::Array { .. } => break,
-                                        _ => return None,
-                                    }
+                                while let ExprKind::Scope { value, .. }
+                                | ExprKind::Borrow { arg: value, .. }
+                                | ExprKind::PointerCoercion { source: value, .. }
+                                | ExprKind::Deref { arg: value } = thir[id].kind
+                                {
+                                    id = value;
                                 }
                                 let ExprKind::Array { ref fields } = thir[id].kind else {
-                                    span_bug!(expr_span, "expected Array expr in codeview_annotation")
+                                    return None;
                                 };
                                 let mut syms = Vec::with_capacity(fields.len());
                                 for &field_id in fields.iter() {
