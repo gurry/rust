@@ -456,7 +456,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                         // and lower them into a CodviewAnnoation MIR intrinsic
                         let strings = args
                             .first()
-                            .and_then(|&arg_id| this.extract_strings_from_array(arg_id));
+                            .and_then(|&arg_id| this.extract_strs_from_array(arg_id));
 
                         match strings {
                             Some(strings) if !strings.is_empty() => {
@@ -960,7 +960,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     /// Peels through THIR wrapper nodes (Scope, Borrow, PointerCoercion, Deref)
     /// to find either an inline array of string literals/named consts, or a
     /// whole NamedConst evaluating to `&[&str]` / `[&str; N]`.
-    fn extract_strings_from_array(&self, expr_id: ExprId) -> Option<Vec<Symbol>> {
+    fn extract_strs_from_array(&self, expr_id: ExprId) -> Option<Vec<Symbol>> {
         // Peel away scopes, borrows etc.
         let mut id = expr_id;
         while let ExprKind::Scope { value, .. }

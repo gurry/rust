@@ -45,7 +45,19 @@ fn annotated_helper() {
     codeview_annotation(&["from_inlined_fn"]);
 }
 
+// Verify named const annotations survive optimization.
+const OPT_STRS: &[&str] = &["const_survives_opt"];
+
+// CHECK-LABEL: @named_const_optimized
+// CHECK: call void @llvm.codeview.annotation(metadata [[CONST_OPT:![0-9]+]])
+#[no_mangle]
+pub fn named_const_optimized(x: u32) -> u32 {
+    codeview_annotation(OPT_STRS);
+    x.wrapping_add(42)
+}
+
 // CHECK-DAG: [[COMP]] = !{!"in_computation"}
 // CHECK-DAG: [[FIRST]] = !{!"first"}
 // CHECK-DAG: [[SECOND]] = !{!"second"}
 // CHECK-DAG: [[INLINED]] = !{!"from_inlined_fn"}
+// CHECK-DAG: [[CONST_OPT]] = !{!"const_survives_opt"}
