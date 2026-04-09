@@ -295,17 +295,28 @@ pub(crate) fn check_intrinsic_type(
         sym::unreachable => (0, 0, vec![], tcx.types.never),
         sym::breakpoint => (0, 0, vec![], tcx.types.unit),
         sym::codeview_annotation => {
-            // codeview_annotation(strings: &[&str]) -> ()
-            // Two bound lifetime regions: one for the outer &, one for the inner &str.
-            let br_outer =
-                ty::BoundRegion { var: ty::BoundVar::ZERO, kind: ty::BoundRegionKind::Anon };
-            let br_inner =
-                ty::BoundRegion { var: ty::BoundVar::from_u32(1), kind: ty::BoundRegionKind::Anon };
-            let region_outer = ty::Region::new_bound(tcx, ty::INNERMOST, br_outer);
-            let region_inner = ty::Region::new_bound(tcx, ty::INNERMOST, br_inner);
-            let str_ref = Ty::new_imm_ref(tcx, region_inner, tcx.types.str_);
+            let str_ref = Ty::new_imm_ref(
+                tcx,
+                ty::Region::new_bound(
+                    tcx,
+                    ty::INNERMOST,
+                    ty::BoundRegion {
+                        var: ty::BoundVar::from_u32(1),
+                        kind: ty::BoundRegionKind::Anon,
+                    },
+                ),
+                tcx.types.str_,
+            );
             let slice_ty = Ty::new_slice(tcx, str_ref);
-            let ref_to_slice = Ty::new_imm_ref(tcx, region_outer, slice_ty);
+            let ref_to_slice = Ty::new_imm_ref(
+                tcx,
+                ty::Region::new_bound(
+                    tcx,
+                    ty::INNERMOST,
+                    ty::BoundRegion { var: ty::BoundVar::ZERO, kind: ty::BoundRegionKind::Anon },
+                ),
+                slice_ty,
+            );
             (0, 0, vec![ref_to_slice], tcx.types.unit)
         }
         sym::size_of | sym::align_of | sym::variant_count => (1, 0, vec![], tcx.types.usize),
