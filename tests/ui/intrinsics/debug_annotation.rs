@@ -32,10 +32,29 @@ fn non_const_arg() {
     debug_annotation(&[s]); //~ ERROR debug_annotation requires constant string literal arguments
 }
 
+// Error case: function parameter
+fn fn_param_arg(strs: &[&str]) {
+    debug_annotation(strs); //~ ERROR debug_annotation requires constant string literal arguments
+}
+
+// Error case: named const
+const MY_CONST: &str = "hello";
+fn named_const_arg() {
+    debug_annotation(&[MY_CONST]); //~ ERROR debug_annotation requires constant string literal arguments
+}
+
+// Error case: empty array
+fn empty_array() {
+    debug_annotation(&[]); //~ ERROR debug_annotation requires at least one string literal argument
+}
+
 fn main() {
     intrinsic_single();
     intrinsic_multiple();
     macro_single();
     macro_multiple();
     non_const_arg();
+    fn_param_arg(&["a"]);
+    named_const_arg();
+    empty_array();
 }
