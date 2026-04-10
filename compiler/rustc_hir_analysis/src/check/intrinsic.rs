@@ -86,6 +86,7 @@ fn intrinsic_operation_unsafety(tcx: TyCtxt<'_>, intrinsic_id: LocalDefId) -> hi
         | sym::ceilf32
         | sym::ceilf64
         | sym::ceilf128
+        | sym::codeview_annotation
         | sym::cold_path
         | sym::const_eval_select
         | sym::contract_check_ensures
@@ -102,7 +103,6 @@ fn intrinsic_operation_unsafety(tcx: TyCtxt<'_>, intrinsic_id: LocalDefId) -> hi
         | sym::ctlz
         | sym::ctpop
         | sym::cttz
-        | sym::codeview_annotation
         | sym::discriminant_value
         | sym::exp2f16
         | sym::exp2f32

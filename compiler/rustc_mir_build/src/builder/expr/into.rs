@@ -454,9 +454,8 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     sym::codeview_annotation => {
                         // Extract strings from the `&[&str]` argument of codeview_annoation
                         // and lower them into a CodviewAnnoation MIR intrinsic
-                        let strings = args
-                            .first()
-                            .and_then(|&arg_id| this.extract_strs_from_array(arg_id));
+                        let strings =
+                            args.first().and_then(|&arg_id| this.extract_strs_from_array(arg_id));
 
                         match strings {
                             Some(strings) if !strings.is_empty() => {
