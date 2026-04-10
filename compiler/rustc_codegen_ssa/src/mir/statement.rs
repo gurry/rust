@@ -97,8 +97,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
             mir::StatementKind::Intrinsic(box NonDivergingIntrinsic::CodeviewAnnotation(
                 ref symbols,
             )) => {
-                let strings: Vec<&[u8]> = symbols.iter().map(|s| s.as_str().as_bytes()).collect();
-                bx.codeview_annotation(&strings);
+                bx.codeview_annotation(symbols);
             }
             mir::StatementKind::FakeRead(..)
             | mir::StatementKind::Retag { .. }

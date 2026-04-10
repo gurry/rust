@@ -1,5 +1,5 @@
 use rustc_middle::ty;
-use rustc_span::Span;
+use rustc_span::{Span, Symbol};
 
 use super::BackendTypes;
 use crate::mir::operand::OperandRef;
@@ -51,5 +51,5 @@ pub trait IntrinsicCallBuilderMethods<'tcx>: BackendTypes {
     fn va_end(&mut self, val: Self::Value) -> Self::Value;
 
     /// Emit a codeview_annotation with the given strings.
-    fn codeview_annotation(&mut self, strings: &[&[u8]]);
+    fn codeview_annotation(&mut self, strings: &[Symbol]);
 }
