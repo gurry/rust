@@ -1011,13 +1011,15 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         let ExprKind::NamedConst { def_id, args, .. } = expr.kind else {
             return None;
         };
-        let instance = ty::Instance::new_raw(def_id, args);
-        let cid = GlobalId { instance, promoted: None };
-        let typing_env = ty::TypingEnv::post_analysis(self.tcx, def_id);
-        let Ok(Ok(valtree)) = self.tcx.const_eval_global_id_for_typeck(typing_env, cid, expr.span)
-        else {
+
+        let Ok(Ok(valtree)) = self.tcx.const_eval_global_id_for_typeck(
+            self.typing_env(),
+            GlobalId { instance: ty::Instance::new_raw(def_id, args), promoted: None },
+            expr.span,
+        ) else {
             return None;
         };
+
         Self::extract_strs_from_value(self.tcx, ty::Value { ty: expr.ty, valtree })
     }
 
