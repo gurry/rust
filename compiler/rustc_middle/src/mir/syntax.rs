@@ -505,7 +505,7 @@ pub enum NonDivergingIntrinsic<'tcx> {
     /// I vaguely remember Ralf saying somewhere that he thought it should not be.
     CopyNonOverlapping(CopyNonOverlapping<'tcx>),
 
-    /// Denotes a codeview_annotation.
+    /// Denotes a call to the intrinsic function `codeview_annotation`.
     ///
     /// Gets lowered to `llvm.codeview.annotation` on LLVM for MSVC targets.
     /// Is a no-op on other targets and backends.
