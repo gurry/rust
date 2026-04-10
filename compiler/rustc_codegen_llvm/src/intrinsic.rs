@@ -844,17 +844,12 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
             return;
         }
 
-        // Create MDStrings from strings
         let md_strings: Vec<&Metadata> =
             strings.iter().map(|s| self.cx.create_metadata(s.as_str().as_bytes())).collect();
-
-        // Create MDTuple from all the MDStrings
         let md_tuple = unsafe {
             llvm::LLVMMDNodeInContext2(self.cx.llcx, md_strings.as_ptr(), md_strings.len())
         };
         let md_value = self.cx.get_metadata_value(md_tuple);
-
-        // Get the intrinsic via lookup
         let (fn_ty, intrinsic_fn) = self.cx.get_intrinsic("llvm.codeview.annotation".into(), &[]);
 
         self.call(fn_ty, None, None, intrinsic_fn, &[md_value], None, None);
