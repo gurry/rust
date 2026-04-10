@@ -955,10 +955,11 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         }
     }
 
-    /// Extract string from an string array expr.
+    /// Extract string from a string array expr.
+    ///
     /// Peels through THIR wrapper nodes (Scope, Borrow, PointerCoercion, Deref)
     /// to find either an inline array of string literals/named consts, or a
-    /// whole NamedConst evaluating to `&[&str]` / `[&str; N]`.
+    /// named const evaluating to such an array.
     fn extract_strs_from_array(&self, expr_id: ExprId) -> Option<Vec<Symbol>> {
         // Peel away scopes, borrows etc.
         let mut id = expr_id;
@@ -969,7 +970,10 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         {
             id = value;
         }
+
+        // Extract strings
         match self.thir[id].kind {
+            // Array literal: e.g. ["lit1", STR_CONST]
             ExprKind::Array { ref fields } => {
                 let mut syms = Vec::with_capacity(fields.len());
                 for &field_id in fields.iter() {
@@ -989,7 +993,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                         ExprKind::NamedConst { .. } => {
                             let mut strs = self.eval_named_const_strs(&self.thir[id])?;
                             if strs.len() != 1 {
-                                // A array field has to be a single string
+                                // Each array field is just a single string
                                 return None;
                             }
                             syms.append(&mut strs);
@@ -999,7 +1003,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 }
                 Some(syms)
             }
-            // Array that's a named const: e.g. const STRS: &[&str] = &["lit1", "lit2"];
+            // Named const array: e.g. const ARR_CONST: &[&str] = &["lit1", STR_CONST]
             ExprKind::NamedConst { .. } => self.eval_named_const_strs(&self.thir[id]),
             _ => None,
         }
