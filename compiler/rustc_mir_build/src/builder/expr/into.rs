@@ -370,7 +370,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             // Some intrinsics are handled here:
             // - write_via_move and write_box_via_move because they desperately want
             //   to avoid introducing unnecessary copies.
-            // - codeview_annoation because it is easier to extract its argument here
+            // - codeview_annotation because it is easier to extract its argument here
             //   than in codegen where it will require walking the MIR.
             ExprKind::Call { ty, fun, ref args, .. }
                 if let ty::FnDef(def_id, generic_args) = *ty.kind()
@@ -452,8 +452,8 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                         block.unit()
                     }
                     sym::codeview_annotation => {
-                        // Extract strings from the `&[&str]` argument of codeview_annoation
-                        // and lower them into a CodviewAnnoation MIR intrinsic
+                        // Extract strings from the `&[&str]` argument of codeview_annotation
+                        // and lower them into a CodeviewAnnotation MIR intrinsic
                         let strings =
                             args.first().and_then(|&arg_id| this.extract_strs_from_array(arg_id));
 
