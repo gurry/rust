@@ -1,73 +1,74 @@
+// Verifies codeview_annotation compile-time behavior:
+// - Happy paths: inline literals, macro usage, named const elements,
+//   mixed const/literal, const slices, const array refs, and const fn usage.
+// - Error cases: non-const arguments, function parameters, empty arrays,
+//   and wrong types.
 //@ only-windows
-// Verify codeview_annotation behavior: happy paths and error cases.
 
 #![feature(codeview_annotation)]
 #![feature(core_intrinsics)]
 
 use std::intrinsics::codeview_annotation;
 
-// Single annotation via intrinsic
 fn intrinsic_single() {
-    codeview_annotation(&["test_annotation"]);
+    codeview_annotation(&["string1"]);
 }
 
-// Multiple annotations via intrinsic
 fn intrinsic_multiple() {
-    codeview_annotation(&["category", "subcategory", "details"]);
+    codeview_annotation(&["string1", "string2", "string3"]);
 }
 
-// Single annotation via macro
 fn macro_single() {
-    std::hint::codeview_annotation!("macro_test");
+    std::hint::codeview_annotation!("string1");
 }
 
-// Multiple annotations via macro
 fn macro_multiple() {
-    std::hint::codeview_annotation!("Performance", "HotPath", "Critical");
+    std::hint::codeview_annotation!("string1", "string2", "string3");
 }
 
-// Named const elements
-const ANNOTATION_A: &str = "hello";
-const ANNOTATION_B: &str = "there";
-
+const ANNOTATION_A: &str = "string1";
+const ANNOTATION_B: &str = "string2";
+const ANNOTATION_C: &str = "string3";
 fn named_const_elements() {
-    codeview_annotation(&[ANNOTATION_A, ANNOTATION_B]);
+    codeview_annotation(&[ANNOTATION_A, ANNOTATION_B, ANNOTATION_C]);
 }
 
-// Named const and literal
-fn mixed_const_and_literal() {
-    codeview_annotation(&[ANNOTATION_A, "world"]);
+fn mixed_named_const_and_literal_elements() {
+    codeview_annotation(&[ANNOTATION_A, "string2", "string3"]);
 }
 
-// Const slice
-const STRS_SLICE: &[&str] = &["hello", "there"];
-
+const STRS_SLICE: &[&str] = &["string1", "string2", "string3"];
 fn named_const_slice() {
     codeview_annotation(STRS_SLICE);
 }
 
-// Ref to named const array
-const STRS_ARRAY: [&str; 2] = ["hello", "there"];
-
+const STRS_ARRAY: [&str; 3] = ["string1", "string2", "string3"];
 fn named_const_array_ref() {
     codeview_annotation(&STRS_ARRAY);
 }
 
-// Error case: local variable
-fn non_const_arg() {
-    let s = "hello";
+// Use in const function
+const fn annotated_computation(x: u32) -> u32 {
+    codeview_annotation(&["string1", "string2", "string3"]);
+    x + 1
+}
+
+// --- Error cases ---
+
+fn non_const_arg(strs: &[&str]) {
+    codeview_annotation(strs); //~ ERROR codeview_annotation requires a constant argument
+    let s = "string1";
     codeview_annotation(&[s]); //~ ERROR codeview_annotation requires a constant argument
 }
 
-// Error case: function parameter
-fn fn_param_arg(strs: &[&str]) {
-    codeview_annotation(strs); //~ ERROR codeview_annotation requires a constant argument
-}
-
-// Error case: empty array
 fn empty_array() {
     codeview_annotation(&[]); //~ ERROR codeview_annotation requires a non-empty array argument
 }
+
+fn wrong_type() {
+    codeview_annotation(42); //~ ERROR mismatched types
+}
+
 
 fn main() {
     intrinsic_single();
@@ -75,10 +76,13 @@ fn main() {
     macro_single();
     macro_multiple();
     named_const_elements();
-    mixed_const_and_literal();
+    mixed_named_const_and_literal_elements();
     named_const_slice();
     named_const_array_ref();
-    non_const_arg();
-    fn_param_arg(&["a"]);
+    let _ = annotated_computation(5);
+    const _: u32 = annotated_computation(5);
+
+    non_const_arg(&["a"]);
     empty_array();
+    wrong_type();
 }
