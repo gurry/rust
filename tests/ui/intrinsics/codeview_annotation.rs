@@ -3,8 +3,6 @@
 //   mixed const/literal, const slices, const array refs, and const fn usage.
 // - Error cases: non-const arguments, function parameters, empty arrays,
 //   and wrong types.
-//@ only-windows
-
 #![feature(codeview_annotation)]
 #![feature(core_intrinsics)]
 
@@ -56,9 +54,9 @@ const fn annotated_computation(x: u32) -> u32 {
 // --- Error cases ---
 
 fn non_const_arg(strs: &[&str]) {
-    codeview_annotation(strs); //~ ERROR codeview_annotation requires a constant argument
+    codeview_annotation(strs); //~ ERROR codeview_annotation requires a const string array argument
     let s = "string1";
-    codeview_annotation(&[s]); //~ ERROR codeview_annotation requires a constant argument
+    codeview_annotation(&[s]); //~ ERROR codeview_annotation requires a const string array argument
 }
 
 fn empty_array() {

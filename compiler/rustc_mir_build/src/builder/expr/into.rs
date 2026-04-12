@@ -480,7 +480,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                             None => {
                                 this.tcx.dcx().span_err(
                                     expr_span,
-                                    "codeview_annotation requires a constant argument",
+                                    "codeview_annotation requires a const string array argument",
                                 );
                             }
                         }
@@ -980,6 +980,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                     let mut id = field_id;
                     while let ExprKind::Scope { value, .. }
                     | ExprKind::Borrow { arg: value, .. }
+                    | ExprKind::PointerCoercion { source: value, .. }
                     | ExprKind::Deref { arg: value } = self.thir[id].kind
                     {
                         id = value;

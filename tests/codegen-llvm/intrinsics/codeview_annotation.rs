@@ -3,7 +3,7 @@
 // calling through the macro, calling with different kinds of
 // args and in the presence of duplicate calls.
 
-//@ only-windows
+//@ only-msvc
 //@ revisions: OPT0 OPT3
 //@ [OPT0] compile-flags: -Copt-level=0
 //@ [OPT3] compile-flags: -Copt-level=3
