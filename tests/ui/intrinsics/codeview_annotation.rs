@@ -54,13 +54,13 @@ const fn annotated_computation(x: u32) -> u32 {
 // --- Error cases ---
 
 fn non_const_arg(strs: &[&str]) {
-    codeview_annotation(strs); //~ ERROR codeview_annotation requires a const string array argument
+    codeview_annotation(strs); //~ ERROR `codeview_annotation` expects a const array
     let s = "string1";
-    codeview_annotation(&[s]); //~ ERROR codeview_annotation requires a const string array argument
+    codeview_annotation(&[s]); //~ ERROR `codeview_annotation` expects a const array
 }
 
 fn empty_array() {
-    codeview_annotation(&[]); //~ ERROR codeview_annotation requires a non-empty array argument
+    codeview_annotation(&[]); //~ ERROR `codeview_annotation` expects a non-empty array
 }
 
 fn wrong_type() {

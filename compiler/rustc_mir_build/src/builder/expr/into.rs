@@ -474,13 +474,13 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                             Some(_) => {
                                 this.tcx.dcx().span_err(
                                     expr_span,
-                                    "codeview_annotation requires a non-empty array argument",
+                                    "`codeview_annotation` expects a non-empty array",
                                 );
                             }
                             None => {
                                 this.tcx.dcx().span_err(
                                     expr_span,
-                                    "codeview_annotation requires a const string array argument",
+                                    "`codeview_annotation` expects a const array",
                                 );
                             }
                         }
@@ -955,7 +955,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         }
     }
 
-    /// Extract string from a string array expr.
+    /// Extract strings from a string array expr.
     ///
     /// Peels through THIR wrapper nodes (Scope, Borrow, PointerCoercion, Deref)
     /// to find either an inline array of string literals/named consts, or a

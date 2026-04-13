@@ -9,19 +9,19 @@ LL |     codeview_annotation(42);
 note: function defined here
   --> $SRC_DIR/core/src/intrinsics/mod.rs:LL:COL
 
-error: codeview_annotation requires a const string array argument
+error: `codeview_annotation` expects a const array
   --> $DIR/codeview_annotation.rs:57:5
    |
 LL |     codeview_annotation(strs);
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: codeview_annotation requires a const string array argument
+error: `codeview_annotation` expects a const array
   --> $DIR/codeview_annotation.rs:59:5
    |
 LL |     codeview_annotation(&[s]);
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: codeview_annotation requires a non-empty array argument
+error: `codeview_annotation` expects a non-empty array
   --> $DIR/codeview_annotation.rs:63:5
    |
 LL |     codeview_annotation(&[]);
