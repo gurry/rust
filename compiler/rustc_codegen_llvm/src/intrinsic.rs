@@ -841,7 +841,7 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
         }
 
         if strings.is_empty() {
-            return;
+            bug!("codeview_annotation with empty strings should not reach codegen");
         }
 
         let md_strings: Vec<&Metadata> =
