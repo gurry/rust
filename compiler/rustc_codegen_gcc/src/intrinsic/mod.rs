@@ -718,7 +718,8 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
     }
 
     fn codeview_annotation(&mut self, _strings: &[Symbol]) {
-        // No-op as unlike LLVM, GCC has no intrinsic we can lower to
+        // No-op as codeview_annotation is supported only by the LLVM backend.
+        // GCC has no intrinsic we can lower to
     }
 }
 
