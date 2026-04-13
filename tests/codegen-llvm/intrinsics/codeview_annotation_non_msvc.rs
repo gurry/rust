@@ -14,5 +14,5 @@ use std::intrinsics::codeview_annotation;
 // CHECK-NOT: codeview.annotation
 #[no_mangle]
 pub fn test_non_msvc() {
-    codeview_annotation(&["string1, string2, string3"]);
+    codeview_annotation(&["string1", "string2", "string3"]);
 }
