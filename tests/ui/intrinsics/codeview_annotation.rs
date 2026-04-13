@@ -24,15 +24,15 @@ fn macro_multiple() {
     std::hint::codeview_annotation!("string1", "string2", "string3");
 }
 
-const ANNOTATION_A: &str = "string1";
-const ANNOTATION_B: &str = "string2";
-const ANNOTATION_C: &str = "string3";
+const STR_A: &str = "string1";
+const STR_B: &str = "string2";
+const STR_C: &str = "string3";
 fn named_const_elements() {
-    codeview_annotation(&[ANNOTATION_A, ANNOTATION_B, ANNOTATION_C]);
+    codeview_annotation(&[STR_A, STR_B, STR_C]);
 }
 
 fn mixed_named_const_and_literal_elements() {
-    codeview_annotation(&[ANNOTATION_A, "string2", "string3"]);
+    codeview_annotation(&[STR_A, "string2", "string3"]);
 }
 
 const STRS_SLICE: &[&str] = &["string1", "string2", "string3"];

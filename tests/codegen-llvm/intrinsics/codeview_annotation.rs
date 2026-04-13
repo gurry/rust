@@ -43,22 +43,22 @@ pub fn macro_multiple_annotations() {
     std::hint::codeview_annotation!("mac_multi1", "mac_multi2", "mac_multi3");
 }
 
-const ANNOTATION_A: &str = "named_const1";
-const ANNOTATION_B: &str = "named_const2";
-const ANNOTATION_C: &str = "named_const3";
+const STR_A: &str = "named_const1";
+const STR_B: &str = "named_const2";
+const STR_C: &str = "named_const3";
 
 // CHECK-LABEL: @named_const_elements
 // CHECK: call void @llvm.codeview.annotation(metadata [[NAMED_CONST:![0-9]+]])
 #[no_mangle]
 pub fn named_const_elements() {
-    codeview_annotation(&[ANNOTATION_A, ANNOTATION_B, ANNOTATION_C]);
+    codeview_annotation(&[STR_A, STR_B, STR_C]);
 }
 
 // CHECK-LABEL: @mixed_named_const_and_literal_elements
 // CHECK: call void @llvm.codeview.annotation(metadata [[MIXED:![0-9]+]])
 #[no_mangle]
 pub fn mixed_named_const_and_literal_elements() {
-    codeview_annotation(&[ANNOTATION_A, "mixed_literal1", "mixed_literal2"]);
+    codeview_annotation(&[STR_A, "mixed_literal1", "mixed_literal2"]);
 }
 
 const STRS_SLICE: &[&str] = &["slice_element1", "slice_element2", "slice_element3"];
