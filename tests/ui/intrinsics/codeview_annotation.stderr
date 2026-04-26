@@ -27,6 +27,12 @@ error: `codeview_annotation` expects a non-empty array
 LL |     codeview_annotation(&[]);
    |     ^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: aborting due to 4 previous errors
+error: `codeview_annotation` expects a const array
+  --> $DIR/codeview_annotation.rs:90:5
+   |
+LL |     codeview_annotation(T::STRS);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: aborting due to 5 previous errors
 
 For more information about this error, try `rustc --explain E0308`.

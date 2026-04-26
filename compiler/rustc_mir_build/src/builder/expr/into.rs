@@ -6,12 +6,12 @@ use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::stack::ensure_sufficient_stack;
 use rustc_hir as hir;
 use rustc_hir::lang_items::LangItem;
-use rustc_middle::mir::interpret::GlobalId;
+use rustc_middle::mir::interpret::{CTFE_ALLOC_SALT, GlobalId};
 use rustc_middle::mir::*;
 use rustc_middle::span_bug;
 use rustc_middle::thir::*;
-use rustc_middle::ty::{self, CanonicalUserTypeAnnotation, Ty, TyCtxt, TypeVisitableExt};
-use rustc_span::{DUMMY_SP, Spanned, Symbol, sym};
+use rustc_middle::ty::{self, CanonicalUserTypeAnnotation, Ty, TypeVisitableExt};
+use rustc_span::{DUMMY_SP, Spanned, sym};
 use rustc_trait_selection::infer::InferCtxtExt;
 use tracing::{debug, instrument};
 
@@ -370,8 +370,9 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             // Some intrinsics are handled here:
             // - write_via_move and write_box_via_move because they desperately want
             //   to avoid introducing unnecessary copies.
-            // - codeview_annotation because it is easier to extract its argument here
-            //   than in codegen where it will require walking the MIR.
+            // - codeview_annotation because it is easier to extract and split its
+            //   argument into individual MIR operands over here than in codegen where
+            //   it will require walking the MIR.
             ExprKind::Call { ty, fun, ref args, .. }
                 if let ty::FnDef(def_id, generic_args) = *ty.kind()
                     && let Some(intrinsic) = this.tcx.intrinsic(def_id)
@@ -452,20 +453,21 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                         block.unit()
                     }
                     sym::codeview_annotation => {
-                        // Extract strings from the `&[&str]` argument of codeview_annotation
-                        // and lower them into a CodeviewAnnotation MIR intrinsic
-                        let strings =
-                            args.first().and_then(|&arg_id| this.extract_strs_from_array(arg_id));
+                        // Extract &strs from the `&[&str]` argument of codeview_annotation,
+                        // convert them into `Operand`s and lower those into a CodeviewAnnotation
+                        // MIR intrinsic
+                        let operands =
+                            args.first().and_then(|&arg_id| this.extract_operands_from_array(arg_id));
 
-                        match strings {
-                            Some(strings) if !strings.is_empty() => {
+                        match operands {
+                            Some(operands) if !operands.is_empty() => {
                                 this.cfg.push(
                                     block,
                                     Statement::new(
                                         this.source_info(expr_span),
                                         StatementKind::Intrinsic(Box::new(
                                             NonDivergingIntrinsic::CodeviewAnnotation(
-                                                strings.into_boxed_slice(),
+                                                operands.into_boxed_slice(),
                                             ),
                                         )),
                                     ),
@@ -955,13 +957,13 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         }
     }
 
-    /// Extract strings from a string array expr.
+    /// Extract elements of a string array expr as MIR operands.
     ///
     /// Peels through THIR wrapper nodes (Scope, Borrow, PointerCoercion, Deref)
     /// to find either an inline array of string literals/named consts, or a
     /// named const evaluating to such an array.
     /// Returns `Operand::Constant` for each individual `&str` element.
-    fn extract_strs_from_array(&mut self, expr_id: ExprId) -> Option<Vec<Operand<'tcx>>> {
+    fn extract_operands_from_array(&mut self, expr_id: ExprId) -> Option<Vec<Operand<'tcx>>> {
         // Peel away scopes, borrows etc.
         let mut id = expr_id;
         while let ExprKind::Scope { value, .. }
@@ -972,9 +974,9 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             id = value;
         }
 
-        // Extract strings
+        // Extract operands
         match self.thir[id].kind {
-            // Array literal: e.g. ["lit1", STR_CONST, T::NAME]
+            // Array literal: e.g. ["lit1", STR_CONST]
             ExprKind::Array { ref fields } => {
                 let fields = fields.clone();
                 let mut operands = Vec::with_capacity(fields.len());
@@ -1000,20 +1002,19 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                 Some(operands)
             }
             // Named const array: e.g. const ARR_CONST: &[&str] = &["lit1", STR_CONST]
-            ExprKind::NamedConst { .. } => self.eval_named_const_str_operands(&self.thir[id]),
+            ExprKind::NamedConst { .. } => self.eval_named_const_to_str_operands(&self.thir[id]),
             _ => None,
         }
     }
 
-    /// Evaluate a `NamedConst` THIR expression that refers to a whole array
+    /// Evaluate a `NamedConst` THIR expression that refers to an array
     /// (e.g. `const STRS: &[&str]`) into individual `Operand::Constant` values.
-    /// Only works for non-generic consts since the whole array must be evaluable.
-    fn eval_named_const_str_operands(&self, expr: &Expr<'tcx>) -> Option<Vec<Operand<'tcx>>> {
+    fn eval_named_const_to_str_operands(&self, expr: &Expr<'tcx>) -> Option<Vec<Operand<'tcx>>> {
         let ExprKind::NamedConst { def_id, args, .. } = expr.kind else {
             return None;
         };
 
-        // Can't evaluate consts with unresolved generic params (e.g. T::NAME)
+        // Can't evaluate consts with unresolved generic params.
         if args.has_non_region_param() {
             return None;
         }
@@ -1026,23 +1027,20 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             return None;
         };
 
-        let syms = Self::extract_strs_from_value(self.tcx, ty::Value { ty: expr.ty, valtree })?;
-        let span = expr.span;
+        let str_bytes =
+            self.extract_str_bytes_from_value(ty::Value { ty: expr.ty, valtree })?;
         let str_ty = Ty::new_imm_ref(self.tcx, self.tcx.lifetimes.re_erased, self.tcx.types.str_);
         Some(
-            syms.into_iter()
-                .map(|sym| {
-                    let s = sym.as_str().as_bytes();
-                    let alloc_id = self.tcx.allocate_bytes_dedup(
-                        s,
-                        rustc_middle::mir::interpret::CTFE_ALLOC_SALT,
-                    );
+            str_bytes
+                .into_iter()
+                .map(|bytes| {
+                    let alloc_id = self.tcx.allocate_bytes_dedup(bytes, CTFE_ALLOC_SALT);
                     let val = ConstValue::Slice {
                         alloc_id,
-                        meta: s.len().try_into().unwrap(),
+                        meta: bytes.len() as u64,
                     };
                     Operand::Constant(Box::new(ConstOperand {
-                        span,
+                        span: expr.span,
                         user_ty: None,
                         const_: Const::Val(val, str_ty),
                     }))
@@ -1051,29 +1049,25 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         )
     }
 
-    /// Recursively extract string symbols from a `ty::Value`.
+    /// Recursively extract raw string bytes from a `ty::Value`.
     /// Handles `&str`, `&[&str]`, `[&str; N]`, and `&[&str; N]`.
-    fn extract_strs_from_value(tcx: TyCtxt<'tcx>, value: ty::Value<'tcx>) -> Option<Vec<Symbol>> {
+    fn extract_str_bytes_from_value(
+        &self,
+        value: ty::Value<'tcx>,
+    ) -> Option<Vec<&'tcx [u8]>> {
         match value.ty.kind() {
             ty::Ref(_, inner_ty, _) if inner_ty.is_str() => {
-                let bytes = value.try_to_raw_bytes(tcx)?;
-                let s = std::str::from_utf8(bytes).ok()?;
-                Some(vec![Symbol::intern(s)])
+                let bytes = value.try_to_raw_bytes(self.tcx)?;
+                Some(vec![bytes])
             }
-            ty::Ref(_, inner_ty, _) => Self::extract_strs_from_value(
-                tcx,
+            ty::Ref(_, inner_ty, _) => self.extract_str_bytes_from_value(
                 ty::Value { ty: *inner_ty, valtree: value.valtree },
             ),
-            ty::Array(..) | ty::Slice(_) => {
-                let elems = value.try_to_branch()?;
-                let mut syms = Vec::with_capacity(elems.len());
-                for c in elems {
-                    let elem_value = c.try_to_value()?;
-                    let mut elem_syms = Self::extract_strs_from_value(tcx, elem_value)?;
-                    syms.append(&mut elem_syms);
-                }
-                Some(syms)
-            }
+            ty::Array(..) | ty::Slice(_) => value
+                .try_to_branch()?
+                .iter()
+                .map(|c| c.try_to_value()?.try_to_raw_bytes(self.tcx))
+                .collect::<Option<Vec<_>>>(),
             _ => None,
         }
     }

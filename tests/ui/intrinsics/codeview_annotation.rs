@@ -81,6 +81,14 @@ fn wrong_type() {
     codeview_annotation(42); //~ ERROR mismatched types
 }
 
+trait HasStrings {
+    const STRS: &'static [&'static str];
+}
+
+fn generic_assoc_const_slice<T: HasStrings>() {
+    codeview_annotation(T::STRS); //~ ERROR `codeview_annotation` expects a const array
+}
+
 
 fn main() {
     intrinsic_single();
