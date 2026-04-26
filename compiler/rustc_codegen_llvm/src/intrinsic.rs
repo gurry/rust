@@ -835,7 +835,7 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
         self.call_intrinsic("llvm.va_end", &[self.val_ty(va_list)], &[va_list])
     }
 
-    fn codeview_annotation(&mut self, strings: &[Symbol]) {
+    fn codeview_annotation(&mut self, strings: &[&[u8]]) {
         if !self.cx.sess().target.is_like_msvc {
             return;
         }
@@ -845,7 +845,7 @@ impl<'ll, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'_, 'll, 'tcx> {
         }
 
         let md_strings: Vec<&Metadata> =
-            strings.iter().map(|s| self.cx.create_metadata(s.as_str().as_bytes())).collect();
+            strings.iter().map(|s| self.cx.create_metadata(s)).collect();
         let md_tuple = unsafe {
             llvm::LLVMMDNodeInContext2(self.cx.llcx, md_strings.as_ptr(), md_strings.len())
         };

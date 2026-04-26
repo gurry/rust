@@ -95,9 +95,23 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                 bx.memcpy(dst, align, src, align, bytes, crate::MemFlags::empty(), None);
             }
             mir::StatementKind::Intrinsic(box NonDivergingIntrinsic::CodeviewAnnotation(
-                ref symbols,
+                ref operands,
             )) => {
-                bx.codeview_annotation(symbols);
+                if operands.is_empty() {
+                    bug!("expected at least one operand in codeview annotation");
+                }
+
+                let mut strings = Vec::new();
+                for op in operands.iter() {
+                    if let mir::Operand::Constant(c) = op {
+                        let val = self.eval_mir_constant(c);
+                        if let Some(bytes) = val.try_get_slice_bytes_for_diagnostics(bx.tcx()) {
+                            strings.push(bytes);
+                        }
+                    }
+                }
+
+                bx.codeview_annotation(&strings);
             }
             mir::StatementKind::FakeRead(..)
             | mir::StatementKind::Retag { .. }

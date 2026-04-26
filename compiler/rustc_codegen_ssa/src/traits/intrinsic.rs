@@ -1,5 +1,5 @@
 use rustc_middle::ty;
-use rustc_span::{Span, Symbol};
+use rustc_span::Span;
 
 use super::BackendTypes;
 use crate::mir::operand::OperandRef;
@@ -50,6 +50,6 @@ pub trait IntrinsicCallBuilderMethods<'tcx>: BackendTypes {
     /// Rust defined C-variadic functions return.
     fn va_end(&mut self, val: Self::Value) -> Self::Value;
 
-    /// Emit a codeview_annotation with the given strings.
-    fn codeview_annotation(&mut self, strings: &[Symbol]);
+    /// Emit a codeview_annotation with the given string bytes.
+    fn codeview_annotation(&mut self, strings: &[&[u8]]);
 }

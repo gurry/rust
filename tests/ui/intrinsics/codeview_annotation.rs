@@ -46,10 +46,24 @@ fn named_const_array_ref() {
 }
 
 // Use in const function
-const fn annotated_computation(x: u32) -> u32 {
+const fn const_func(x: u32) -> u32 {
     codeview_annotation(&["string1", "string2", "string3"]);
     x + 1
 }
+
+// Consts having generic params
+trait TypeName {
+    const NAME: &str;
+}
+
+impl TypeName for i32 {
+    const NAME: &str = "i32";
+}
+
+fn generics<T: TypeName>() {
+    codeview_annotation(&["string", T::NAME, "string3"]);
+}
+
 
 // --- Error cases ---
 
@@ -77,8 +91,9 @@ fn main() {
     mixed_named_const_and_literal_elements();
     named_const_slice();
     named_const_array_ref();
-    let _ = annotated_computation(5);
-    const _: u32 = annotated_computation(5);
+    let _ = const_func(5);
+    const _: u32 = const_func(5);
+    generics::<i32>();
 
     non_const_arg(&["a"]);
     empty_array();

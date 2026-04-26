@@ -1,7 +1,7 @@
 //! See docs in build/expr/mod.rs
 
 use rustc_abi::FieldIdx;
-use rustc_ast::{AsmMacro, InlineAsmOptions, LitKind};
+use rustc_ast::{AsmMacro, InlineAsmOptions};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::stack::ensure_sufficient_stack;
 use rustc_hir as hir;
@@ -10,7 +10,7 @@ use rustc_middle::mir::interpret::GlobalId;
 use rustc_middle::mir::*;
 use rustc_middle::span_bug;
 use rustc_middle::thir::*;
-use rustc_middle::ty::{self, CanonicalUserTypeAnnotation, Ty, TyCtxt};
+use rustc_middle::ty::{self, CanonicalUserTypeAnnotation, Ty, TyCtxt, TypeVisitableExt};
 use rustc_span::{DUMMY_SP, Spanned, Symbol, sym};
 use rustc_trait_selection::infer::InferCtxtExt;
 use tracing::{debug, instrument};
@@ -960,7 +960,8 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
     /// Peels through THIR wrapper nodes (Scope, Borrow, PointerCoercion, Deref)
     /// to find either an inline array of string literals/named consts, or a
     /// named const evaluating to such an array.
-    fn extract_strs_from_array(&self, expr_id: ExprId) -> Option<Vec<Symbol>> {
+    /// Returns `Operand::Constant` for each individual `&str` element.
+    fn extract_strs_from_array(&mut self, expr_id: ExprId) -> Option<Vec<Operand<'tcx>>> {
         // Peel away scopes, borrows etc.
         let mut id = expr_id;
         while let ExprKind::Scope { value, .. }
@@ -973,9 +974,10 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
         // Extract strings
         match self.thir[id].kind {
-            // Array literal: e.g. ["lit1", STR_CONST]
+            // Array literal: e.g. ["lit1", STR_CONST, T::NAME]
             ExprKind::Array { ref fields } => {
-                let mut syms = Vec::with_capacity(fields.len());
+                let fields = fields.clone();
+                let mut operands = Vec::with_capacity(fields.len());
                 for &field_id in fields.iter() {
                     let mut id = field_id;
                     while let ExprKind::Scope { value, .. }
@@ -986,36 +988,35 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                         id = value;
                     }
                     match self.thir[id].kind {
-                        ExprKind::Literal { lit, neg: false }
-                            if let LitKind::Str(sym, _) = lit.node =>
-                        {
-                            syms.push(sym);
-                        }
-                        ExprKind::NamedConst { .. } => {
-                            let mut strs = self.eval_named_const_strs(&self.thir[id])?;
-                            if strs.len() != 1 {
-                                // Each array field is just a single string
-                                return None;
-                            }
-                            syms.append(&mut strs);
+                        ExprKind::Literal { .. }
+                        | ExprKind::NamedConst { .. }
+                        | ExprKind::ConstParam { .. } => {
+                            let const_op = self.as_constant(&self.thir[id]);
+                            operands.push(Operand::Constant(Box::new(const_op)));
                         }
                         _ => return None,
                     }
                 }
-                Some(syms)
+                Some(operands)
             }
             // Named const array: e.g. const ARR_CONST: &[&str] = &["lit1", STR_CONST]
-            ExprKind::NamedConst { .. } => self.eval_named_const_strs(&self.thir[id]),
+            ExprKind::NamedConst { .. } => self.eval_named_const_str_operands(&self.thir[id]),
             _ => None,
         }
     }
 
-    /// Evaluate a `NamedConst` THIR expression to a list of string symbols.
-    /// Works for `&str` (returns one symbol), `&[&str]`, `[&str; N]`, etc.
-    fn eval_named_const_strs(&self, expr: &Expr<'tcx>) -> Option<Vec<Symbol>> {
+    /// Evaluate a `NamedConst` THIR expression that refers to a whole array
+    /// (e.g. `const STRS: &[&str]`) into individual `Operand::Constant` values.
+    /// Only works for non-generic consts since the whole array must be evaluable.
+    fn eval_named_const_str_operands(&self, expr: &Expr<'tcx>) -> Option<Vec<Operand<'tcx>>> {
         let ExprKind::NamedConst { def_id, args, .. } = expr.kind else {
             return None;
         };
+
+        // Can't evaluate consts with unresolved generic params (e.g. T::NAME)
+        if args.has_non_region_param() {
+            return None;
+        }
 
         let Ok(Ok(valtree)) = self.tcx.const_eval_global_id_for_typeck(
             self.typing_env(),
@@ -1025,7 +1026,29 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             return None;
         };
 
-        Self::extract_strs_from_value(self.tcx, ty::Value { ty: expr.ty, valtree })
+        let syms = Self::extract_strs_from_value(self.tcx, ty::Value { ty: expr.ty, valtree })?;
+        let span = expr.span;
+        let str_ty = Ty::new_imm_ref(self.tcx, self.tcx.lifetimes.re_erased, self.tcx.types.str_);
+        Some(
+            syms.into_iter()
+                .map(|sym| {
+                    let s = sym.as_str().as_bytes();
+                    let alloc_id = self.tcx.allocate_bytes_dedup(
+                        s,
+                        rustc_middle::mir::interpret::CTFE_ALLOC_SALT,
+                    );
+                    let val = ConstValue::Slice {
+                        alloc_id,
+                        meta: s.len().try_into().unwrap(),
+                    };
+                    Operand::Constant(Box::new(ConstOperand {
+                        span,
+                        user_ty: None,
+                        const_: Const::Val(val, str_ty),
+                    }))
+                })
+                .collect(),
+        )
     }
 
     /// Recursively extract string symbols from a `ty::Value`.

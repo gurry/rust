@@ -509,11 +509,7 @@ pub enum NonDivergingIntrinsic<'tcx> {
     ///
     /// Gets lowered to `llvm.codeview.annotation` on LLVM for MSVC targets.
     /// Is a no-op on other targets and backends.
-    CodeviewAnnotation(
-        #[type_foldable(identity)]
-        #[type_visitable(ignore)]
-        Box<[rustc_span::Symbol]>,
-    ),
+    CodeviewAnnotation(Box<[Operand<'tcx>]>),
 }
 
 /// Describes what kind of retag is to be performed.
