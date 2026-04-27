@@ -27,7 +27,7 @@ error: `codeview_annotation` expects a non-empty array
 LL |     codeview_annotation(&[]);
    |     ^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: `codeview_annotation` expects a const array
+error: `codeview_annotation` argument cannot be a generic const
   --> $DIR/codeview_annotation.rs:97:5
    |
 LL |     codeview_annotation(T::STRS);

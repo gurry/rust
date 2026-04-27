@@ -453,38 +453,94 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                         block.unit()
                     }
                     sym::codeview_annotation => {
-                        // Extract &strs from the `&[&str]` argument of codeview_annotation,
-                        // convert them into `Operand`s and lower those into a CodeviewAnnotation
-                        // MIR intrinsic
-                        let operands =
-                            args.first().and_then(|&arg_id| this.extract_operands_from_array(arg_id));
+                        // Extract &str operands from the argument and lower them
+                        // into a CodeviewAnnotation MIR intrinsic.
 
-                        match operands {
-                            Some(operands) if !operands.is_empty() => {
-                                this.cfg.push(
-                                    block,
-                                    Statement::new(
-                                        this.source_info(expr_span),
-                                        StatementKind::Intrinsic(Box::new(
-                                            NonDivergingIntrinsic::CodeviewAnnotation(
-                                                operands.into_boxed_slice(),
-                                            ),
-                                        )),
-                                    ),
-                                );
+                        let Some(&arg_id) = args.first() else {
+                            span_bug!(
+                                expr_span,
+                                "`codeview_annotation` must have exactly one argument"
+                            )
+                        };
+
+                        let id = this.peel_wrappers(arg_id);
+
+                        let mut operands = None;
+
+                        match this.thir[id].kind {
+                            // Inline array: e.g. &["lit1", STR_CONST, T::NAME]
+                            ExprKind::Array { ref fields } => {
+                                if fields.is_empty() {
+                                    this.tcx.dcx().span_err(
+                                        expr_span,
+                                        "`codeview_annotation` expects a non-empty array",
+                                    );
+                                } else {
+                                    let fields = fields.clone();
+                                    let mut ops = Vec::with_capacity(fields.len());
+                                    let mut all_const_elements = true;
+                                    for &field_id in fields.iter() {
+                                        let fid = this.peel_wrappers(field_id);
+                                        match this.thir[fid].kind {
+                                            ExprKind::Literal { .. }
+                                            | ExprKind::NamedConst { .. }
+                                            | ExprKind::ConstParam { .. } => {
+                                                let c = this.as_constant(&this.thir[fid]);
+                                                ops.push(Operand::Constant(Box::new(c)));
+                                            }
+                                            _ => {
+                                                all_const_elements = false;
+                                                this.tcx.dcx().span_err(
+                                                    expr_span,
+                                                    "`codeview_annotation` expects a const array",
+                                                );
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if all_const_elements {
+                                        operands = Some(ops);
+                                    }
+                                }
                             }
-                            Some(_) => {
+                            // Generic named const: e.g. T::STRS
+                            ExprKind::NamedConst { args, .. } if args.has_non_region_param() => {
                                 this.tcx.dcx().span_err(
                                     expr_span,
-                                    "`codeview_annotation` expects a non-empty array",
+                                    "`codeview_annotation` argument cannot be a generic const",
                                 );
                             }
-                            None => {
+                            // Concrete named const: e.g. const STRS: &[&str]
+                            ExprKind::NamedConst { .. } => {
+                                let result = this.eval_named_const_to_str_operands(&this.thir[id]);
+                                if result.is_none() {
+                                    this.tcx.dcx().span_err(
+                                        expr_span,
+                                        "`codeview_annotation` expects a const array",
+                                    );
+                                }
+                                operands = result;
+                            }
+                            _ => {
                                 this.tcx.dcx().span_err(
                                     expr_span,
                                     "`codeview_annotation` expects a const array",
                                 );
                             }
+                        }
+
+                        if let Some(operands) = operands {
+                            this.cfg.push(
+                                block,
+                                Statement::new(
+                                    this.source_info(expr_span),
+                                    StatementKind::Intrinsic(Box::new(
+                                        NonDivergingIntrinsic::CodeviewAnnotation(
+                                            operands.into_boxed_slice(),
+                                        ),
+                                    )),
+                                ),
+                            );
                         }
 
                         // Assign unit to destination
@@ -957,15 +1013,9 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         }
     }
 
-    /// Extract elements of a string array expr as MIR operands.
-    ///
-    /// Peels through THIR wrapper nodes (Scope, Borrow, PointerCoercion, Deref)
-    /// to find either an inline array of string literals/named consts, or a
-    /// named const evaluating to such an array.
-    /// Returns `Operand::Constant` for each individual `&str` element.
-    fn extract_operands_from_array(&mut self, expr_id: ExprId) -> Option<Vec<Operand<'tcx>>> {
-        // Peel away scopes, borrows etc.
-        let mut id = expr_id;
+    /// Peel through THIR wrapper nodes (Scope, Borrow, PointerCoercion, Deref)
+    /// to find the inner expression.
+    fn peel_wrappers(&self, mut id: ExprId) -> ExprId {
         while let ExprKind::Scope { value, .. }
         | ExprKind::Borrow { arg: value, .. }
         | ExprKind::PointerCoercion { source: value, .. }
@@ -973,38 +1023,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
         {
             id = value;
         }
-
-        // Extract operands
-        match self.thir[id].kind {
-            // Array literal: e.g. ["lit1", STR_CONST]
-            ExprKind::Array { ref fields } => {
-                let fields = fields.clone();
-                let mut operands = Vec::with_capacity(fields.len());
-                for &field_id in fields.iter() {
-                    let mut id = field_id;
-                    while let ExprKind::Scope { value, .. }
-                    | ExprKind::Borrow { arg: value, .. }
-                    | ExprKind::PointerCoercion { source: value, .. }
-                    | ExprKind::Deref { arg: value } = self.thir[id].kind
-                    {
-                        id = value;
-                    }
-                    match self.thir[id].kind {
-                        ExprKind::Literal { .. }
-                        | ExprKind::NamedConst { .. }
-                        | ExprKind::ConstParam { .. } => {
-                            let const_op = self.as_constant(&self.thir[id]);
-                            operands.push(Operand::Constant(Box::new(const_op)));
-                        }
-                        _ => return None,
-                    }
-                }
-                Some(operands)
-            }
-            // Named const array: e.g. const ARR_CONST: &[&str] = &["lit1", STR_CONST]
-            ExprKind::NamedConst { .. } => self.eval_named_const_to_str_operands(&self.thir[id]),
-            _ => None,
-        }
+        id
     }
 
     /// Evaluate a `NamedConst` THIR expression that refers to an array
@@ -1014,11 +1033,6 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             return None;
         };
 
-        // Can't evaluate consts with unresolved generic params.
-        if args.has_non_region_param() {
-            return None;
-        }
-
         let Ok(Ok(valtree)) = self.tcx.const_eval_global_id_for_typeck(
             self.typing_env(),
             GlobalId { instance: ty::Instance::new_raw(def_id, args), promoted: None },
@@ -1027,18 +1041,14 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
             return None;
         };
 
-        let str_bytes =
-            self.extract_str_bytes_from_value(ty::Value { ty: expr.ty, valtree })?;
+        let str_bytes = self.extract_str_bytes_from_value(ty::Value { ty: expr.ty, valtree })?;
         let str_ty = Ty::new_imm_ref(self.tcx, self.tcx.lifetimes.re_erased, self.tcx.types.str_);
         Some(
             str_bytes
                 .into_iter()
                 .map(|bytes| {
                     let alloc_id = self.tcx.allocate_bytes_dedup(bytes, CTFE_ALLOC_SALT);
-                    let val = ConstValue::Slice {
-                        alloc_id,
-                        meta: bytes.len() as u64,
-                    };
+                    let val = ConstValue::Slice { alloc_id, meta: bytes.len() as u64 };
                     Operand::Constant(Box::new(ConstOperand {
                         span: expr.span,
                         user_ty: None,
@@ -1051,18 +1061,14 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
 
     /// Recursively extract raw string bytes from a `ty::Value`.
     /// Handles `&str`, `&[&str]`, `[&str; N]`, and `&[&str; N]`.
-    fn extract_str_bytes_from_value(
-        &self,
-        value: ty::Value<'tcx>,
-    ) -> Option<Vec<&'tcx [u8]>> {
+    fn extract_str_bytes_from_value(&self, value: ty::Value<'tcx>) -> Option<Vec<&'tcx [u8]>> {
         match value.ty.kind() {
             ty::Ref(_, inner_ty, _) if inner_ty.is_str() => {
                 let bytes = value.try_to_raw_bytes(self.tcx)?;
                 Some(vec![bytes])
             }
-            ty::Ref(_, inner_ty, _) => self.extract_str_bytes_from_value(
-                ty::Value { ty: *inner_ty, valtree: value.valtree },
-            ),
+            ty::Ref(_, inner_ty, _) => self
+                .extract_str_bytes_from_value(ty::Value { ty: *inner_ty, valtree: value.valtree }),
             ty::Array(..) | ty::Slice(_) => value
                 .try_to_branch()?
                 .iter()

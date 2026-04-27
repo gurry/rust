@@ -94,7 +94,7 @@ impl HasStrs for i32 {
 }
 
 fn generic_associated_const_slice<T: HasStrs>() {
-    codeview_annotation(T::STRS); //~ ERROR `codeview_annotation` expects a const array
+    codeview_annotation(T::STRS); //~ ERROR `codeview_annotation` argument cannot be a generic const
 }
 
 
