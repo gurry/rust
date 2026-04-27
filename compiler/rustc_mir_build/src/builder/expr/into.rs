@@ -478,7 +478,7 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                 } else {
                                     let fields = fields.clone();
                                     let mut ops = Vec::with_capacity(fields.len());
-                                    let mut all_const_elements = true;
+                                    let mut non_const_element_found = false;
                                     for &field_id in fields.iter() {
                                         let fid = this.peel_wrappers(field_id);
                                         match this.thir[fid].kind {
@@ -489,17 +489,19 @@ impl<'a, 'tcx> Builder<'a, 'tcx> {
                                                 ops.push(Operand::Constant(Box::new(c)));
                                             }
                                             _ => {
-                                                all_const_elements = false;
-                                                this.tcx.dcx().span_err(
-                                                    expr_span,
-                                                    "`codeview_annotation` expects a const array",
-                                                );
+                                                non_const_element_found = true;
                                                 break;
                                             }
                                         }
                                     }
-                                    if all_const_elements {
+
+                                    if !non_const_element_found {
                                         operands = Some(ops);
+                                    } else {
+                                        this.tcx.dcx().span_err(
+                                            expr_span,
+                                            "`codeview_annotation` expects a const array",
+                                        );
                                     }
                                 }
                             }
