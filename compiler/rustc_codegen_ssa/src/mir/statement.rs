@@ -101,15 +101,24 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                     bug!("expected at least one operand in codeview annotation");
                 }
 
-                let mut strings = Vec::new();
-                for op in operands.iter() {
-                    if let mir::Operand::Constant(c) = op {
-                        let val = self.eval_mir_constant(c);
-                        if let Some(bytes) = val.try_get_slice_bytes_for_diagnostics(bx.tcx()) {
-                            strings.push(bytes);
+                let strings = operands
+                    .iter()
+                    .map(|op| {
+                        if let mir::Operand::Constant(c) = op {
+                            let val = self.eval_mir_constant(c);
+                            let mir::ConstValue::Slice { alloc_id, meta } = val else {
+                                bug!("codeview annotation operand is not a `ConstValue::Slice`");
+                            };
+                            bx.tcx()
+                                .global_alloc(alloc_id)
+                                .unwrap_memory()
+                                .inner()
+                                .inspect_with_uninit_and_ptr_outside_interpreter(0..meta as usize)
+                        } else {
+                            bug!("codeview annotation operand is not a constant");
                         }
-                    }
-                }
+                    })
+                    .collect::<Vec<_>>();
 
                 bx.codeview_annotation(&strings);
             }
