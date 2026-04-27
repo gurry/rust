@@ -107,7 +107,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                         if let mir::Operand::Constant(c) = op {
                             let val = self.eval_mir_constant(c);
                             let mir::ConstValue::Slice { alloc_id, meta } = val else {
-                                bug!("codeview annotation operand is not a `ConstValue::Slice`");
+                                bug!("`CodeviewAnnotation` operand is not a `ConstValue::Slice`");
                             };
                             bx.tcx()
                                 .global_alloc(alloc_id)
@@ -115,7 +115,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                                 .inner()
                                 .inspect_with_uninit_and_ptr_outside_interpreter(0..meta as usize)
                         } else {
-                            bug!("codeview annotation operand is not a constant");
+                            bug!("`CodeviewAnnotation` operand is not a constant");
                         }
                     })
                     .collect::<Vec<_>>();
