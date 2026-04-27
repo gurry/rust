@@ -52,16 +52,18 @@ const fn const_func(x: u32) -> u32 {
 }
 
 // Consts having generic params
-trait TypeName {
+trait Var {
     const NAME: &str;
+    const VAL: &str;
 }
 
-impl TypeName for i32 {
+impl Var for i32 {
     const NAME: &str = "i32";
+    const VAL: &str = "5";
 }
 
-fn generics<T: TypeName>() {
-    codeview_annotation(&["string", T::NAME, "string3"]);
+fn generic_const_elements<T: Var>() {
+    codeview_annotation(&["string", T::NAME, T::VAL]);
 }
 
 
@@ -81,11 +83,17 @@ fn wrong_type() {
     codeview_annotation(42); //~ ERROR mismatched types
 }
 
-trait HasStrings {
-    const STRS: &'static [&'static str];
+// Slices that are associated consts on generic types are not
+// yet supported because complicate the implementation a bit
+trait HasStrs {
+    const STRS: &[&str];
 }
 
-fn generic_assoc_const_slice<T: HasStrings>() {
+impl HasStrs for i32 {
+    const STRS: &[&str] = &["string1", "string2", "string3"];
+}
+
+fn generic_associated_const_slice<T: HasStrs>() {
     codeview_annotation(T::STRS); //~ ERROR `codeview_annotation` expects a const array
 }
 
@@ -101,9 +109,10 @@ fn main() {
     named_const_array_ref();
     let _ = const_func(5);
     const _: u32 = const_func(5);
-    generics::<i32>();
+    generic_const_elements::<i32>();
 
     non_const_arg(&["a"]);
     empty_array();
     wrong_type();
+    generic_associated_const_slice::<i32>();
 }
