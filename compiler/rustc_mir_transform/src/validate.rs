@@ -1544,6 +1544,11 @@ impl<'a, 'tcx> Visitor<'tcx> for TypeChecker<'a, 'tcx> {
                 if operands.is_empty() {
                     self.fail(location, "`CodeviewAnnotation` must have at least one operand");
                 }
+                for op in operands.iter() {
+                    if !matches!(op, Operand::Constant(_)) {
+                        self.fail(location, "`CodeviewAnnotation` operands must be constants");
+                    }
+                }
             }
             StatementKind::SetDiscriminant { place, .. } => {
                 if self.body.phase < MirPhase::Runtime(RuntimePhase::Initial) {
