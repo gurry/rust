@@ -622,6 +622,9 @@ impl<'tcx> interpret::Machine<'tcx> for CompileTimeMachine<'tcx> {
                 ecx.write_scalar(Scalar::from_target_usize(offset, ecx), dest)?;
             }
 
+            // codeview_annotation is a no-op at compile time
+            sym::codeview_annotation => {}
+
             _ => {
                 // We haven't handled the intrinsic, let's see if we can use a fallback body.
                 if ecx.tcx.intrinsic(instance.def_id()).unwrap().must_be_overridden {

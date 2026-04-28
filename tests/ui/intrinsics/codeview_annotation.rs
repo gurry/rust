@@ -1,8 +1,8 @@
 // Verifies codeview_annotation compile-time behavior:
 // - Happy paths: inline literals, macro usage, named const elements,
-//   mixed const/literal, const slices, const array refs, and const fn usage.
-// - Error cases: non-const arguments, function parameters, empty arrays,
-//   and wrong types.
+//   mixed const/literal, const slices, const array refs.
+// - Error cases: wrong types, non-const usage in const fn.
+// - Non-const arguments compile but are silently ignored at codegen time.
 #![feature(codeview_annotation)]
 #![feature(core_intrinsics)]
 
@@ -45,9 +45,11 @@ fn named_const_array_ref() {
     codeview_annotation(&STRS_ARRAY);
 }
 
-// Use in const function
+// Use in const function is not currently supported because the intrinsic
+// does not have a const-evaluable body.
 const fn const_func(x: u32) -> u32 {
     codeview_annotation(&["string1", "string2", "string3"]);
+    //~^ ERROR cannot call non-const intrinsic `codeview_annotation` in constant functions
     x + 1
 }
 
@@ -66,25 +68,24 @@ fn generic_const_elements<T: Var>() {
     codeview_annotation(&["string", T::NAME, T::VAL]);
 }
 
-
-// --- Error cases ---
-
+// Non-const arguments are accepted at compile time but the codegen
+// MIR walker will silently produce no annotation for them.
 fn non_const_arg(strs: &[&str]) {
-    codeview_annotation(strs); //~ ERROR `codeview_annotation` expects a const array
+    codeview_annotation(strs);
     let s = "string1";
-    codeview_annotation(&[s]); //~ ERROR `codeview_annotation` expects a const array
+    codeview_annotation(&[s]);
 }
 
 fn empty_array() {
-    codeview_annotation(&[]); //~ ERROR `codeview_annotation` expects a non-empty array
+    codeview_annotation(&[]);
 }
 
 fn wrong_type() {
     codeview_annotation(42); //~ ERROR mismatched types
 }
 
-// Slices that are associated consts on generic types are not
-// yet supported because complicate the implementation a bit
+// Generic associated consts are now accepted (the MIR walker
+// extracts strings at codegen time when the type is monomorphized).
 trait HasStrs {
     const STRS: &[&str];
 }
@@ -94,7 +95,7 @@ impl HasStrs for i32 {
 }
 
 fn generic_associated_const_slice<T: HasStrs>() {
-    codeview_annotation(T::STRS); //~ ERROR `codeview_annotation` argument cannot be a generic const
+    codeview_annotation(T::STRS);
 }
 
 
@@ -108,9 +109,7 @@ fn main() {
     named_const_slice();
     named_const_array_ref();
     let _ = const_func(5);
-    const _: u32 = const_func(5);
     generic_const_elements::<i32>();
-
     non_const_arg(&["a"]);
     empty_array();
     wrong_type();

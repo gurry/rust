@@ -691,7 +691,6 @@ impl<'a, 'tcx> Visitor<'tcx> for TypeChecker<'a, 'tcx> {
                 }
             }
             StatementKind::Intrinsic(box NonDivergingIntrinsic::Assume(..))
-            | StatementKind::Intrinsic(box NonDivergingIntrinsic::CodeviewAnnotation(..))
             | StatementKind::FakeRead(..)
             | StatementKind::StorageLive(..)
             | StatementKind::StorageDead(..)

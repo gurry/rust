@@ -240,8 +240,7 @@ fn check_statement<'tcx>(
         },
 
         // These are all NOPs
-        StatementKind::Intrinsic(box NonDivergingIntrinsic::CodeviewAnnotation(_))
-        | StatementKind::StorageLive(_)
+        StatementKind::StorageLive(_)
         | StatementKind::StorageDead(_)
         | StatementKind::Retag { .. }
         | StatementKind::AscribeUserType(..)

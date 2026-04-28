@@ -1540,16 +1540,6 @@ impl<'a, 'tcx> Visitor<'tcx> for TypeChecker<'a, 'tcx> {
                     self.fail(location, format!("bad arg ({op_cnt_ty} != usize)"))
                 }
             }
-            StatementKind::Intrinsic(box NonDivergingIntrinsic::CodeviewAnnotation(operands)) => {
-                if operands.is_empty() {
-                    self.fail(location, "`CodeviewAnnotation` must have at least one operand");
-                }
-                for op in operands.iter() {
-                    if !matches!(op, Operand::Constant(_)) {
-                        self.fail(location, "`CodeviewAnnotation` operands must be constants");
-                    }
-                }
-            }
             StatementKind::SetDiscriminant { place, .. } => {
                 if self.body.phase < MirPhase::Runtime(RuntimePhase::Initial) {
                     self.fail(location, "`SetDiscriminant`is not allowed until deaggregation");

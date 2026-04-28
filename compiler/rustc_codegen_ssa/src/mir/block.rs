@@ -9,10 +9,10 @@ use rustc_lint_defs::builtin::TAIL_CALL_TRACK_CALLER;
 use rustc_middle::mir::{self, AssertKind, InlineAsmMacro, SwitchTargets, UnwindTerminateReason};
 use rustc_middle::ty::layout::{HasTyCtxt, LayoutOf, ValidityRequirement};
 use rustc_middle::ty::print::{with_no_trimmed_paths, with_no_visible_paths};
-use rustc_middle::ty::{self, Instance, Ty, TypeVisitableExt};
+use rustc_middle::ty::{self, Instance, Ty, TyCtxt, TypeVisitableExt};
 use rustc_middle::{bug, span_bug};
 use rustc_session::config::OptLevel;
-use rustc_span::{Span, Spanned};
+use rustc_span::{Span, Spanned, sym};
 use rustc_target::callconv::{ArgAbi, ArgAttributes, CastTarget, FnAbi, PassMode};
 use tracing::{debug, info};
 
@@ -939,6 +939,22 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                             mergeable_succ,
                         ) {
                             return merging_succ;
+                        }
+
+                        // Intercept codeview_annotation: extract string bytes
+                        // from the &[&str] argument by walking the MIR, then
+                        // emit the backend-specific annotation call.
+                        if intrinsic.name == sym::codeview_annotation {
+                            if let Some(target) = target {
+                                if let Some(arg) = args.first() {
+                                    let strings =
+                                        self.extract_codeview_strings(bx, &arg.node);
+                                    if !strings.is_empty() {
+                                        bx.codeview_annotation(&strings);
+                                    }
+                                }
+                                return helper.funclet_br(self, bx, target, mergeable_succ);
+                            }
                         }
 
                         let result_layout =
@@ -2164,6 +2180,289 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                 self.debug_introduce_local(bx, index);
             }
         }
+    }
+
+    /// Extract string bytes from a `&[&str]` MIR operand by tracing through MIR.
+    /// Handles direct constants, copies/moves of locals assigned from constants,
+    /// unsizing casts, and re-borrows.
+    fn extract_codeview_strings(
+        &self,
+        bx: &Bx,
+        operand: &mir::Operand<'tcx>,
+    ) -> Vec<&'tcx [u8]> {
+        match operand {
+            mir::Operand::Constant(constant) => {
+                let val = self.eval_mir_constant(constant);
+                let ty = self.monomorphize(constant.ty());
+                self.extract_strings_from_const_value(bx.tcx(), val, ty)
+            }
+            mir::Operand::Copy(place) | mir::Operand::Move(place) => {
+                if !place.projection.is_empty() {
+                    return Vec::new();
+                }
+                self.trace_codeview_local(bx, place.local)
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Trace a local back through MIR assignments to find the source constant.
+    fn trace_codeview_local(
+        &self,
+        bx: &Bx,
+        local: mir::Local,
+    ) -> Vec<&'tcx [u8]> {
+        for bb_data in self.mir.basic_blocks.iter() {
+            for stmt in &bb_data.statements {
+                if let mir::StatementKind::Assign(box (place, rvalue)) = &stmt.kind {
+                    if place.local != local || !place.projection.is_empty() {
+                        continue;
+                    }
+                    match rvalue {
+                        mir::Rvalue::Cast(
+                            mir::CastKind::PointerCoercion(
+                                ty::adjustment::PointerCoercion::Unsize, _
+                            ),
+                            source_operand,
+                            _cast_ty,
+                        ) => {
+                            return self.extract_codeview_strings(bx, source_operand);
+                        }
+                        mir::Rvalue::Use(operand) => {
+                            return self.extract_codeview_strings(bx, operand);
+                        }
+                        mir::Rvalue::Ref(_, _, borrowed_place) => {
+                            if borrowed_place.projection.is_empty() {
+                                return self.trace_codeview_local(bx, borrowed_place.local);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        Vec::new()
+    }
+
+    /// Extract individual string bytes from a constant value.
+    /// Handles `&[&str]`, `&[&str; N]`, `[&str; N]`, and `&str`.
+    fn extract_strings_from_const_value(
+        &self,
+        tcx: TyCtxt<'tcx>,
+        val: mir::ConstValue,
+        ty: Ty<'tcx>,
+    ) -> Vec<&'tcx [u8]> {
+        // For &str: directly a Slice ConstValue
+        if let ty::Ref(_, inner_ty, _) = ty.kind() {
+            if inner_ty.is_str() {
+                if let mir::ConstValue::Slice { alloc_id, meta } = val {
+                    let alloc = tcx.global_alloc(alloc_id).unwrap_memory();
+                    return vec![alloc
+                        .inner()
+                        .inspect_with_uninit_and_ptr_outside_interpreter(0..meta as usize)];
+                }
+                return Vec::new();
+            }
+            // &[&str; N] — thin pointer stored as Scalar.
+            // Dereference: extract the alloc_id from the pointer,
+            // create an Indirect ConstValue for the inner array type,
+            // then destructure that.
+            if let mir::ConstValue::Scalar(scalar) = val {
+                if let Some(ptr) = scalar.to_pointer(&tcx).discard_err() {
+                    if let Ok(provenance) = ptr.into_pointer_or_addr() {
+                        let (prov, offset) = provenance.prov_and_relative_offset();
+                        let inner_val = mir::ConstValue::Indirect {
+                            alloc_id: prov.alloc_id(),
+                            offset,
+                        };
+                        return self.extract_strings_from_const_value(tcx, inner_val, *inner_ty);
+                    }
+                }
+            }
+            // &[&str; N] might also be stored as Indirect (the pointer bytes are
+            // in the allocation). Read the pointer from the allocation.
+            if let mir::ConstValue::Indirect { alloc_id, offset } = val {
+                let alloc = tcx.global_alloc(alloc_id).unwrap_memory().inner();
+                let ptr_size = tcx.data_layout.pointer_size();
+                if inner_ty.is_sized(tcx, ty::TypingEnv::fully_monomorphized()) {
+                    // Sized inner type (e.g. [&str; N]): read thin pointer, deref
+                    if let Ok(ptr_scalar) = alloc.read_scalar(
+                        &tcx,
+                        mir::interpret::alloc_range(offset, ptr_size),
+                        true,
+                    ) {
+                        if let Some(ptr) = ptr_scalar.to_pointer(&tcx).discard_err() {
+                            if let Ok(provenance) = ptr.into_pointer_or_addr() {
+                                let (prov, inner_offset) = provenance.prov_and_relative_offset();
+                                let inner_val = mir::ConstValue::Indirect {
+                                    alloc_id: prov.alloc_id(),
+                                    offset: inner_offset,
+                                };
+                                return self.extract_strings_from_const_value(
+                                    tcx, inner_val, *inner_ty,
+                                );
+                            }
+                        }
+                    }
+                } else {
+                    // Unsized inner type (e.g. [&str]): read fat pointer (data_ptr + len)
+                    if let Ok(data_scalar) = alloc.read_scalar(
+                        &tcx,
+                        mir::interpret::alloc_range(offset, ptr_size),
+                        true,
+                    ) {
+                        if let Some(data_ptr) = data_scalar.to_pointer(&tcx).discard_err() {
+                            if let Ok(len_scalar) = alloc.read_scalar(
+                                &tcx,
+                                mir::interpret::alloc_range(offset + ptr_size, ptr_size),
+                                false,
+                            ) {
+                                if let Some(count) =
+                                    len_scalar.to_target_usize(&tcx).discard_err()
+                                {
+                                    if let Ok(prov) = data_ptr.into_pointer_or_addr() {
+                                        let (p, data_offset) = prov.prov_and_relative_offset();
+                                        return self.read_str_elements_from_alloc(
+                                            tcx,
+                                            p.alloc_id(),
+                                            data_offset,
+                                            count as usize,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // &[&str] stored as a fat pointer (ConstValue::Slice).
+            if let mir::ConstValue::Slice { alloc_id, meta } = val {
+                return self.read_str_elements_from_alloc(tcx, alloc_id, Size::ZERO, meta as usize);
+            }
+            return Vec::new();
+        }
+
+        // Array or slice of &str — use try_destructure_mir_constant_for_user_output
+        if matches!(ty.kind(), ty::Array(..) | ty::Slice(..)) {
+            if let Some(destructured) =
+                tcx.try_destructure_mir_constant_for_user_output(val, ty)
+            {
+                return destructured
+                    .fields
+                    .iter()
+                    .filter_map(|&(field_val, field_ty)| {
+                        self.extract_one_string(tcx, field_val, field_ty)
+                    })
+                    .collect();
+            }
+        }
+
+        Vec::new()
+    }
+
+    /// Extract bytes from a single &str ConstValue.
+    fn extract_one_string(
+        &self,
+        tcx: TyCtxt<'tcx>,
+        val: mir::ConstValue,
+        ty: Ty<'tcx>,
+    ) -> Option<&'tcx [u8]> {
+        // Check type is &str
+        let is_str_ref = matches!(ty.kind(), ty::Ref(_, inner, _) if inner.is_str());
+        if !is_str_ref {
+            return None;
+        }
+
+        // Direct Slice (common for &str)
+        if let mir::ConstValue::Slice { alloc_id, meta } = val {
+            let alloc = tcx.global_alloc(alloc_id).unwrap_memory();
+            return Some(
+                alloc.inner().inspect_with_uninit_and_ptr_outside_interpreter(0..meta as usize),
+            );
+        }
+
+        // Indirect: the &str fat pointer is stored in memory. Read data ptr + len.
+        if let mir::ConstValue::Indirect { alloc_id, offset } = val {
+            let alloc = tcx.global_alloc(alloc_id).unwrap_memory().inner();
+            let ptr_size = tcx.data_layout.pointer_size();
+            // Read the data pointer
+            let data_scalar = alloc
+                .read_scalar(&tcx, mir::interpret::alloc_range(offset, ptr_size), true)
+                .ok()?;
+            let data_ptr = data_scalar.to_pointer(&tcx).discard_err()?;
+            // Read the length
+            let len_scalar = alloc
+                .read_scalar(
+                    &tcx,
+                    mir::interpret::alloc_range(offset + ptr_size, ptr_size),
+                    false,
+                )
+                .ok()?;
+            let len = len_scalar.to_target_usize(&tcx).discard_err()?;
+            if len == 0 {
+                return Some(&[]);
+            }
+            // Follow the data pointer to get the string bytes
+            let (prov, str_offset) = data_ptr.into_pointer_or_addr().ok()?.prov_and_relative_offset();
+            let str_alloc = tcx.global_alloc(prov.alloc_id()).unwrap_memory();
+            let start = str_offset.bytes() as usize;
+            let end = start + len as usize;
+            return Some(
+                str_alloc.inner().inspect_with_uninit_and_ptr_outside_interpreter(start..end),
+            );
+        }
+
+        None
+    }
+
+    /// Read `count` `&str` elements from an allocation at a given offset.
+    /// Each element is a fat pointer: (data_ptr: ptr_size, len: ptr_size).
+    fn read_str_elements_from_alloc(
+        &self,
+        tcx: TyCtxt<'tcx>,
+        alloc_id: mir::interpret::AllocId,
+        base_offset: Size,
+        count: usize,
+    ) -> Vec<&'tcx [u8]> {
+        if count == 0 {
+            return Vec::new();
+        }
+        let alloc = tcx.global_alloc(alloc_id).unwrap_memory().inner();
+        let ptr_size = tcx.data_layout.pointer_size();
+        let elem_size = ptr_size * 2;
+        let mut strings = Vec::with_capacity(count);
+        for i in 0..count {
+            let offset = base_offset + Size::from_bytes(i as u64 * elem_size.bytes());
+            if let Ok(data_scalar) =
+                alloc.read_scalar(&tcx, mir::interpret::alloc_range(offset, ptr_size), true)
+            {
+                if let Some(data_ptr) = data_scalar.to_pointer(&tcx).discard_err() {
+                    if let Ok(len_scalar) = alloc.read_scalar(
+                        &tcx,
+                        mir::interpret::alloc_range(offset + ptr_size, ptr_size),
+                        false,
+                    ) {
+                        if let Some(len) = len_scalar.to_target_usize(&tcx).discard_err() {
+                            if let Ok(prov) = data_ptr.into_pointer_or_addr() {
+                                let (p, str_offset) = prov.prov_and_relative_offset();
+                                let str_alloc =
+                                    tcx.global_alloc(p.alloc_id()).unwrap_memory();
+                                let start = str_offset.bytes() as usize;
+                                let end = start + len as usize;
+                                strings.push(
+                                    str_alloc
+                                        .inner()
+                                        .inspect_with_uninit_and_ptr_outside_interpreter(
+                                            start..end,
+                                        ),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        strings
     }
 }
 

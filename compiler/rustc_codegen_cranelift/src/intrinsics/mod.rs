@@ -279,6 +279,13 @@ pub(crate) fn codegen_intrinsic_call<'tcx>(
     let intrinsic = fx.tcx.item_name(instance.def_id());
     let instance_args = instance.args;
 
+    // codeview_annotation is a no-op for cranelift (CodeView is LLVM-only)
+    if intrinsic == sym::codeview_annotation {
+        let ret_block = fx.get_block(target.expect("target for codeview_annotation"));
+        fx.bcx.ins().jump(ret_block, &[]);
+        return Ok(());
+    }
+
     if intrinsic.as_str().starts_with("simd_") {
         self::simd::codegen_simd_intrinsic_call(
             fx,
